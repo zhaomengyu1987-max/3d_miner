@@ -1,0 +1,25 @@
+[gd_scene format=3 uid="uid://dpfwiuvtl4uy"]
+
+[ext_resource type="Material" path="res://assets/planet/materials/surface_unlit_mat.tres" id="1_i2b8j"]
+[ext_resource type="Material" uid="uid://ceiswjimsbd62" path="res://assets/planet/materials/cloud_noise_mat.tres" id="3_yq5ra"]
+[ext_resource type="PlaneMesh" path="res://assets/planet/meshes/cloud_plane.tres" id="4_meofd"]
+[ext_resource type="Script" uid="uid://bqjow41oo2cm3" path="res://scripts/AtmosphereControl.gd" id="5_yq5ra"]
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_yq5ra"]
+size = Vector2(512, 512)
+
+[node name="PlanetSurface" type="Node3D" unique_id=352280755]
+
+[node name="SurfacePlane" type="MeshInstance3D" parent="." unique_id=247953879]
+transform = Transform3D(1.76, 0, 0, 0, 1, 0, 0, 0, 1, -129.94167, -0.07659912, -0.052764893)
+material_override = ExtResource("1_i2b8j")
+mesh = SubResource("PlaneMesh_yq5ra")
+
+[node name="CloudLayer" type="MeshInstance3D" parent="." unique_id=573411792]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 70, 0)
+visible = false
+material_override = ExtResource("3_yq5ra")
+cast_shadow = 0
+mesh = ExtResource("4_meofd")
+script = ExtResource("5_yq5ra")
+enabled = false

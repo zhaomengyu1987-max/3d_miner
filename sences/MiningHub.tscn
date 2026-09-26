@@ -1,0 +1,8 @@
+[gd_scene format=3 uid="uid://blkbtc1yfvnrk"]
+
+[ext_resource type="PackedScene" uid="uid://ckbxe2aqdal1n" path="res://assets/models/building/athanor_lod0.glb" id="1_0o1uk"]
+
+[node name="MiningHub" type="Node3D" unique_id=497343975]
+
+[node name="athanor" parent="." unique_id=1282751917 instance=ExtResource("1_0o1uk")]
+transform = Transform3D(0.1, 0, 0, 0, 0.1, 0, 0, 0, 0.1, -1.310475, 0, 1.5530918)

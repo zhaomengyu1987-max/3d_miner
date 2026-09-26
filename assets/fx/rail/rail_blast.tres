@@ -1,0 +1,37 @@
+[gd_resource type="ShaderMaterial" format=3]
+
+[ext_resource type="Shader" path="res://shaders/rail_blast.gdshader" id="1_shader"]
+[ext_resource type="Texture2D" uid="uid://c3p64nikdqhrm" path="res://assets/fx/rail/rail_cloud.png" id="2_cloud"]
+[ext_resource type="Texture2D" uid="uid://d1boelfu4n5s6" path="res://assets/fx/rail/axial_lut.png" id="3_axial"]
+[ext_resource type="Texture2D" uid="uid://piiyrdbkf1bg" path="res://assets/fx/rail/radial_lut.png" id="4_radial"]
+[ext_resource type="Texture2D" uid="uid://b523nd1n1suq8" path="res://assets/fx/rail/noise_field.png" id="5_noise"]
+[ext_resource type="Texture2D" uid="uid://8bx1rfbqhqch" path="res://assets/fx/rail/beam_ramps.png" id="6_ramp"]
+
+[resource]
+render_priority = 0
+shader = ExtResource("1_shader")
+shader_parameter/cloud_density = 0.98
+shader_parameter/cloud_flow = 0.25
+shader_parameter/cloud_period = 40.0
+shader_parameter/boil_period1 = 60.0
+shader_parameter/boil_period2 = 25.0
+shader_parameter/boil_speed1 = 0.36
+shader_parameter/boil_speed2 = -0.55
+shader_parameter/flicker_amount = 0.33
+shader_parameter/flicker_speed = 3.0
+shader_parameter/core_gain = 1.9
+shader_parameter/core_sharp = 20.0
+shader_parameter/core_ramp_pos = 0.97
+shader_parameter/muzzle_gain = 2.8
+shader_parameter/muzzle_frac = 0.22
+shader_parameter/muzzle_len = 6.0
+shader_parameter/tail_dim = 0.3
+shader_parameter/head_glow = 2.6
+shader_parameter/head_radius = 5.0
+shader_parameter/head_ramp_pos = 0.85
+shader_parameter/output_gain = 2.2
+shader_parameter/cloud_map = ExtResource("2_cloud")
+shader_parameter/axial_lut = ExtResource("3_axial")
+shader_parameter/radial_lut = ExtResource("4_radial")
+shader_parameter/noise_map = ExtResource("5_noise")
+shader_parameter/ramp_atlas = ExtResource("6_ramp")

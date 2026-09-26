@@ -1,0 +1,7 @@
+# Godot 4 导入缓存与生成物
+.godot/
+*.tmp
+logs/
+# 系统杂项
+.DS_Store
+Thumbs.db

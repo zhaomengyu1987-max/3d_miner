@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://cxn8omgl335b6"]
+
+[ext_resource type="Script" uid="uid://d02nboyyogiru" path="res://scripts/IceBeltGen.gd" id="1_icebelt"]
+
+[node name="IceBelt" type="Node3D" unique_id=7510311]
+script = ExtResource("1_icebelt")

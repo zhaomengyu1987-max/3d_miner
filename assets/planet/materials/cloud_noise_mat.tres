@@ -1,0 +1,11 @@
+[gd_resource type="StandardMaterial3D" format=3 uid="uid://ceiswjimsbd62"]
+
+[ext_resource type="Texture2D" uid="uid://be5djroe1j6mm" path="res://assets/planet/textures/cloud_noise.png" id="1_noise"]
+
+[resource]
+transparency = 1
+cull_mode = 2
+albedo_color = Color(1, 1, 1, 0.9)
+albedo_texture = ExtResource("1_noise")
+uv1_scale = Vector3(8, 8, 1)
+uv1_offset = Vector3(0.581013, 0.546662, 0)

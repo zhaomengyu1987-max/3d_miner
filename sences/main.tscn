@@ -1,0 +1,111 @@
+[gd_scene format=3 uid="uid://cekd7d8adtwrp"]
+
+[ext_resource type="Script" uid="uid://vakct7b1y8go" path="res://scripts/MiningCamera2.gd" id="1_r4dii"]
+[ext_resource type="PackedScene" uid="uid://blkbtc1yfvnrk" path="res://sences/MiningHub.tscn" id="2_1j6d1"]
+[ext_resource type="PackedScene" path="res://sences/BeltFlow.tscn" id="4_40i81"]
+[ext_resource type="PackedScene" uid="uid://dpfwiuvtl4uy" path="res://sences/planetSurface.tscn" id="5_mqxhw"]
+[ext_resource type="PackedScene" path="res://sences/IceFlow.tscn" id="6_3dblt"]
+
+[sub_resource type="Environment" id="Environment_jq8tk"]
+background_energy_multiplier = 0.0
+ambient_light_energy = 0.0
+fog_mode = 1
+fog_light_color = Color(0, 0.11476659, 0.29212424, 1)
+fog_density = 0.0
+volumetric_fog_enabled = true
+volumetric_fog_density = 0.01
+volumetric_fog_albedo = Color(0.3098643, 0.40636897, 0.49113578, 1)
+volumetric_fog_length = 17.01
+volumetric_fog_ambient_inject = 2.58
+volumetric_fog_sky_affect = 0.0
+adjustment_enabled = true
+adjustment_contrast = 1.12
+adjustment_saturation = 1.31
+
+[node name="Main" type="Node3D" unique_id=1697865878]
+
+[node name="Camera3D" type="Camera3D" parent="." unique_id=473496762]
+transform = Transform3D(1, 0, 0, 0, 0.34379843, 0.93904346, 0, -0.93904346, 0.34379843, 1.7089748, 18, 10)
+current = true
+fov = 62.5
+near = 0.036
+script = ExtResource("1_r4dii")
+limit_y_max = 18.0
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=965481846]
+transform = Transform3D(0.6507177, -0.5800909, -0.48996028, 0, -0.6452621, 0.76396126, -0.7593198, -0.49712306, -0.41988346, 9.746216, -0.6904186, 4.38665)
+light_indirect_energy = 1.895
+light_volumetric_fog_energy = 0.0
+shadow_enabled = true
+directional_shadow_mode = 0
+directional_shadow_max_distance = 10.0
+sky_mode = 1
+
+[node name="MiningHub" parent="." unique_id=497343975 instance=ExtResource("2_1j6d1")]
+transform = Transform3D(-0.1647786, 0, -0.11334908, 0, 0.2, 0, 0.11334908, 0, -0.1647786, 0.55543995, 5.846321, 3.9341278)
+
+[node name="StationSpotA" type="SpotLight3D" parent="MiningHub" unique_id=893310007]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, -15, 2, 8)
+light_color = Color(0.6, 0.8, 1, 1)
+light_energy = 6.0
+light_volumetric_fog_energy = 6.0
+shadow_enabled = true
+spot_range = 45.0
+spot_attenuation = 1.2
+spot_angle = 32.0
+
+[node name="StationSpotB" type="SpotLight3D" parent="MiningHub" unique_id=1746922107]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 15, 2, -8)
+light_color = Color(1, 0.85, 0.6, 1)
+light_energy = 6.0
+light_volumetric_fog_energy = 6.0
+shadow_enabled = true
+spot_range = 45.0
+spot_attenuation = 1.2
+spot_angle = 32.0
+
+[node name="StationGlow" type="OmniLight3D" parent="MiningHub" unique_id=550804347]
+light_color = Color(0.7, 0.85, 1, 1)
+light_energy = 2.5
+light_volumetric_fog_energy = 4.0
+shadow_enabled = true
+omni_range = 60.0
+
+[node name="BeltFlow" parent="." unique_id=2112670759 instance=ExtResource("4_40i81")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 14.053265, 6.0505266, -8.207104)
+flow_speed = 1.5
+speed_variance = 1.0
+target_count = 400
+spin_speed_min = 0.33
+spin_speed_max = 0.5
+tier_s_weight = 64.0
+tier_l_weight = 5.0
+tier_xl_weight = 1.0
+beam_color = Color(0.25, 0.65, 1, 0.5)
+
+[node name="IceFlow" parent="." unique_id=577035756 instance=ExtResource("6_3dblt")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 0.75953937, -6.0505867, -11.910551, -18.48338)
+field_thickness = 10.0
+flow_speed = 0.2
+speed_variance = 0.1
+total_count = 1000
+scale_min = 10.0
+scale_max = 11.0
+spin_min = 1.0
+spin_max = 2.0
+
+[node name="PlanetSurface" parent="." unique_id=352280755 instance=ExtResource("5_mqxhw")]
+transform = Transform3D(1, 0, 0, 0, 0.9967051, -0.081110805, 0, 0.081110805, 0.9967051, 120.72702, -298.0803, -167.14005)
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=959860228]
+environment = SubResource("Environment_jq8tk")
+
+[node name="OmniLight3D" type="OmniLight3D" parent="." unique_id=1737578328]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 37.920456, 7.466568, -15.418301)
+light_energy = 1.5
+light_volumetric_fog_energy = 5.728
+light_size = 1.0
+light_negative = true
+light_specular = 0.0
+omni_range = 100.0
+omni_attenuation = 0.05
