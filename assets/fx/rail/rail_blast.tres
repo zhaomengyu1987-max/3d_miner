@@ -1,11 +1,11 @@
 [gd_resource type="ShaderMaterial" format=3]
 
 [ext_resource type="Shader" path="res://shaders/rail_blast.gdshader" id="1_shader"]
-[ext_resource type="Texture2D" uid="uid://c3p64nikdqhrm" path="res://assets/fx/rail/rail_cloud.png" id="2_cloud"]
-[ext_resource type="Texture2D" uid="uid://d1boelfu4n5s6" path="res://assets/fx/rail/axial_lut.png" id="3_axial"]
-[ext_resource type="Texture2D" uid="uid://piiyrdbkf1bg" path="res://assets/fx/rail/radial_lut.png" id="4_radial"]
-[ext_resource type="Texture2D" uid="uid://b523nd1n1suq8" path="res://assets/fx/rail/noise_field.png" id="5_noise"]
-[ext_resource type="Texture2D" uid="uid://8bx1rfbqhqch" path="res://assets/fx/rail/beam_ramps.png" id="6_ramp"]
+[ext_resource type="Texture2D" uid="uid://tr6lxtrwjf6n" path="res://assets/fx/rail/rail_cloud.png" id="2_cloud"]
+[ext_resource type="Texture2D" uid="uid://dyoerhwv6w11o" path="res://assets/fx/rail/axial_lut.png" id="3_axial"]
+[ext_resource type="Texture2D" uid="uid://ctcgu7plvpcpw" path="res://assets/fx/rail/radial_lut.png" id="4_radial"]
+[ext_resource type="Texture2D" uid="uid://bl16bd4glq0ob" path="res://assets/fx/rail/noise_field.png" id="5_noise"]
+[ext_resource type="Texture2D" uid="uid://bselxpjx7o14v" path="res://assets/fx/rail/beam_ramps.png" id="6_ramp"]
 
 [resource]
 render_priority = 0

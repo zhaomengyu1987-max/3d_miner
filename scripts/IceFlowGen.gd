@@ -94,7 +94,7 @@ func _build() -> void:
 		p.name = "Ice_%d" % i
 		p.amount = per_system
 		p.lifetime = lifetime
-		p.preprocess = lifetime  # 开局预填满整条带, 无空白期
+		p.preprocess = lifetime  # 预模拟整个寿命: 开局即铺满全带(慢流速时 60s 上限会导致逐渐填充)
 		p.draw_pass_1 = mesh
 		p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		var pm := ParticleProcessMaterial.new()

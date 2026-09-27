@@ -5,6 +5,7 @@
 [ext_resource type="PackedScene" path="res://sences/BeltFlow.tscn" id="4_40i81"]
 [ext_resource type="PackedScene" uid="uid://dpfwiuvtl4uy" path="res://sences/planetSurface.tscn" id="5_mqxhw"]
 [ext_resource type="PackedScene" path="res://sences/IceFlow.tscn" id="6_3dblt"]
+[ext_resource type="Script" uid="uid://c18f8u1qkfd20" path="res://scripts/dev/TimeWarp.gd" id="7_timewarp"]
 
 [sub_resource type="Environment" id="Environment_jq8tk"]
 background_energy_multiplier = 0.0
@@ -33,7 +34,8 @@ limit_y_max = 18.0
 
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=965481846]
 transform = Transform3D(0.98146236, -0.14641705, -0.12366777, -0.0747039, -0.8864852, 0.4566872, -0.17649643, -0.43898287, -0.8809899, 9.746216, 24.017136, 4.38665)
-light_energy = 2.0
+light_color = Color(0.89411765, 0.95686275, 0.96862745, 1)
+light_energy = 3.0
 light_indirect_energy = 1.895
 light_volumetric_fog_energy = 0.0
 shadow_enabled = true
@@ -42,7 +44,7 @@ directional_shadow_max_distance = 10.0
 sky_mode = 1
 
 [node name="MiningHub" parent="." unique_id=497343975 instance=ExtResource("2_1j6d1")]
-transform = Transform3D(-0.1647786, 0, -0.11334908, 0, 0.2, 0, 0.11334908, 0, -0.1647786, 0.55543995, 5.846321, 3.9341278)
+transform = Transform3D(-0.1647786, 0, -0.11334908, 0, 0.2, 0, 0.11334908, 0, -0.1647786, 0.55543995, 9.5821495, 3.9341278)
 
 [node name="StationSpotA" type="SpotLight3D" parent="MiningHub" unique_id=893310007]
 transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, -15, 2, 8)
@@ -55,17 +57,20 @@ spot_attenuation = 1.2
 spot_angle = 32.0
 
 [node name="BeltFlow" parent="." unique_id=2112670759 instance=ExtResource("4_40i81")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 14.053265, 6.0505266, -8.207104)
-flow_speed = 1.5
-speed_variance = 1.0
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 14.053265, -2.689969, -8.207104)
+flow_speed = 0.77
+speed_variance = 0.5
 target_count = 400
 spin_speed_min = 0.33
 spin_speed_max = 0.5
+normal_ore_weight = 30.0
+ice_ore_weight = 50.0
 tier_s_weight = 64.0
 tier_m_weight = 32.0
 tier_l_weight = 3.0
 tier_xl_weight = 1.0
 beam_color = Color(0.25, 0.65, 1, 0.5)
+station_clear_radius = 6.0
 
 [node name="IceFlow" parent="." unique_id=577035756 instance=ExtResource("6_3dblt")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 0.75953937, -6.0505867, -11.910551, -18.48338)
@@ -93,3 +98,6 @@ light_negative = true
 light_specular = 0.0
 omni_range = 100.0
 omni_attenuation = 0.05
+
+[node name="TimeWarp" type="Node" parent="." unique_id=1419856581]
+script = ExtResource("7_timewarp")

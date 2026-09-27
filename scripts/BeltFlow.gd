@@ -11,6 +11,9 @@ const ORE_NORMAL := {
 	"metalOre": "res://assets/NormalOre/metalOre.glb",
 	"Mesh0": "res://assets/NormalOre/Mesh0.glb",
 	"RockOre": "res://assets/NormalOre/RockOre.glb",
+}
+## 冰矿组: 后续新冰块形态往这里添行(GLB 文件位置不限, 按名索引)
+const ORE_ICE := {
 	"IceOre": "res://assets/NormalOre/IceOre.glb",
 }
 const ORE_RARE := {
@@ -88,19 +91,30 @@ const CloseupCam := preload("res://scripts/TowCloseupCam.gd")
 		spin_speed_max = maxf(v, 0.0)
 
 @export_group("矿池权重")
-## 普通5种 vs 稀有6种 的出现权重(组内等概率)
-@export var normal_ore_weight := 80.0:
+## 普通4种 / 冰矿 / 稀有5种 三组出现权重(组内等概率)
+@export var normal_ore_weight := 70.0:
 	set(v):
 		normal_ore_weight = maxf(v, 0.0)
 @export var rare_ore_weight := 20.0:
 	set(v):
 		rare_ore_weight = maxf(v, 0.0)
+## 冰矿组权重(冰带主题, 后续扩充形态)
+@export var ice_ore_weight := 15.0:
+	set(v):
+		ice_ore_weight = maxf(v, 0.0)
 
 @export_group("档位权重(资源池掷骰)")
 @export var tier_s_weight := 50.0
 @export var tier_m_weight := 30.0
 @export var tier_l_weight := 15.0
 @export var tier_xl_weight := 2.0
+
+@export_group("引力捕获(初级)")
+## 弹开后偏出走廊的矿: 超出上/下边带高度即回收
+@export var despawn_band_up := 25.0
+@export var despawn_band_down := 25.0
+## 全域兜底: 离带中心超过该半径(米)的任何方向失踪矿直接回收
+@export var despawn_stray_radius := 250.0
 
 @export_group("引力捕获(初级)")
 @export var capture_enabled := true
@@ -128,10 +142,12 @@ const CloseupCam := preload("res://scripts/TowCloseupCam.gd")
 @export var capture_reach := 3.0
 
 @export_group("空间站避让")
-## 漂移矿绕开空间站的清空半径(米); 捕获中的矿不受影响
-@export var station_clear_radius := 8.0:
+## 站体清空半径: 0=自动(运行时从站体网格AABB推算), >0=手动覆盖(米)
+@export var station_clear_radius := 0.0:
 	set(v):
-		station_clear_radius = maxf(v, 1.0)
+		station_clear_radius = maxf(v, 0.0)
+## 自动半径的贴边系数: 站体半径×(1+系数); 0.2 = 矿可贴到站壳 20% 距离处
+@export var station_clear_margin := 0.2
 ## 避让推力强度(越大绕得越急)
 @export var station_push := 2.5:
 	set(v):
@@ -142,8 +158,13 @@ const CloseupCam := preload("res://scripts/TowCloseupCam.gd")
 	set(v):
 		show_debug_zones = v
 		_update_debug()
+## 每 3s 的"贴站矿 / 池占用"诊断打印(排查断流时打开)。
+## 默认关: 10× 加速下每 3s 模拟时间打一条, 实测 48 分钟游戏时间刷了 966 条。
+@export var debug_monitor := false
 
 var _pool: Array[BeltOre] = []
+## 生成起点游标: _spawn_one 从它开始找空槽位, 用完前移一位
+var _spawn_cursor := 0
 var _meshes: Dictionary = {}
 var _mesh_max_dim: Dictionary = {}
 var _rng := RandomNumberGenerator.new()
@@ -153,6 +174,8 @@ var _started := false
 var _station: Node3D
 var _beam_fx: GravityBeamFX
 var _beam_ids := {}
+var _clear_radius := 8.0  # 实际生效的避让半径(自动测量或手动覆盖)
+var _dbg_accum2 := 0.0
 var _closeup  # TowCloseupCam (CanvasLayer), 运行时创建
 
 
@@ -189,17 +212,37 @@ func _process(delta: float) -> void:
 			var lp := to_local(ore.global_position)
 			# 回收判定 v2: 沿流向越过消失区远端即回收——
 			# 旧"盒内命中"判定会被避让推挤的 Y/Z 偏移漏掉(矿飘出走廊永不回收→池子耗尽)
-			if lp.dot(fd) > despawn_edge or ore.age > max_ore_age_s:
+			if lp.dot(fd) > despawn_edge or ore.age > max_ore_age_s 					or lp.y > despawn_band_up or lp.y < -despawn_band_down 					or lp.length() > despawn_stray_radius:
 				ore.set_drifting(false)
 			elif _station != null and is_instance_valid(_station):
-				# 软避让: 靠近空间站时侧向推开, 绕行不穿模
+				# 软避让 v2: 注入径向逃逸速度(旧版直接改坐标与求解器打架, 矿黏站)
 				var off := ore.global_position - station_pos
 				var d := off.length()
-				if d < station_clear_radius and d > 0.01:
-					ore.global_position += off.normalized() \
-						* (station_clear_radius - d) * station_push * delta
+				if d < _clear_radius and d > 0.01:
+					var strength := (_clear_radius - d) / _clear_radius
+					ore.linear_velocity += off.normalized() * strength * station_push * 10.0 * delta
 	if active < target_count:
 		_spawn_one()
+	# 诊断 v2: 贴站矿专项(每3s: 最近站距/最远X进度) —— 仅 debug_monitor 打开时统计并打印
+	if debug_monitor:
+		_dbg_accum2 += delta
+		if _dbg_accum2 >= 3.0:
+			_dbg_accum2 = 0.0
+			var nearest := INF
+			var near_ore: BeltOre = null
+			for ore2 in _pool:
+				if not ore2.visible:
+					continue
+				var d2 := ore2.global_position.distance_to(station_pos)
+				if d2 < nearest:
+					nearest = d2
+					near_ore = ore2
+			var lp2 := to_local(near_ore.global_position) if near_ore else Vector3.ZERO
+			print("[监控] 最近站距=%.1f (%s %s档 y=%.1f z=%.1f vel=%.2f) 边缘=%.0f 池=%d" % [
+				nearest, near_ore.ore_name if near_ore else "-",
+				near_ore.tier if near_ore else "-", lp2.y, lp2.z,
+				near_ore.linear_velocity.x if near_ore else 0.0,
+				despawn_edge, active])
 
 
 func _muzzle_pos() -> Variant:
@@ -275,6 +318,39 @@ func _kill_beam(ore: BeltOre) -> void:
 		_closeup.clear_target(ore)
 
 
+## 从站体 mesh AABB 实测清空半径(最大半宽 × (1+贴边系数)); 手动覆盖优先
+func _measure_station_radius() -> void:
+	if station_clear_radius > 0.0:
+		_clear_radius = station_clear_radius
+		print("BeltFlow: 站体避让半径(手动) = %.1f m" % _clear_radius)
+		return
+	_clear_radius = 8.0
+	var hub := _station
+	if hub == null or not is_instance_valid(hub):
+		return
+	# 找站体下最大的网格 AABB, 沿父链乘全所有缩放(世界真实尺度)
+	var best := 0.0
+	var stack: Array[Node] = [hub]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		if n is MeshInstance3D and (n as MeshInstance3D).mesh != null:
+			var mi := n as MeshInstance3D
+			# 世界缩放 = 本节点与 hub 之间所有祖先 scale 的乘积
+			var ws := Vector3.ONE
+			var walker: Node = mi
+			while walker != null and walker != hub:
+				ws *= (walker as Node3D).scale if walker is Node3D else Vector3.ONE
+				walker = walker.get_parent()
+			ws *= hub.global_transform.basis.get_scale()
+			var sz := mi.mesh.get_aabb().size * ws
+			best = maxf(best, 0.5 * maxf(sz.x, maxf(sz.y, sz.z)))
+		for c in n.get_children():
+			stack.append(c)
+	if best > 0.5:
+		_clear_radius = best * (1.0 + station_clear_margin)
+	print("BeltFlow: 站体避让半径(自动) = %.1f m (站体半宽 %.1f)" % [_clear_radius, best])
+
+
 func _start_flow() -> void:
 	_rng.seed = hash(name) + int(global_position.x)
 	for c in get_children():
@@ -288,12 +364,14 @@ func _start_flow() -> void:
 			_station = scene.find_child("MiningHub", true, false)
 	if _station == null:
 		push_warning("BeltFlow: 找不到空间站(MiningHub), 引力捕获不可用")
+	_measure_station_radius()
 	if capture_enabled:
 		_beam_fx = GravityBeamFX.new()
 		add_child(_beam_fx)
 	_closeup = CloseupCam.new()
 	add_child(_closeup)
 	_pool.clear()
+	_spawn_cursor = 0
 	for i in target_count:
 		var ore := BeltOre.new()
 		add_child(ore)
@@ -305,7 +383,13 @@ func _start_flow() -> void:
 
 
 func _spawn_one(prefill := false) -> void:
-	for ore in _pool:
+	# 轮转起点取空槽位(而不是固定从 _pool[0] 找第一个不可见的):
+	# 旧实现下, 一个"取到就报废"的坏槽位会每帧被取中, 其余空槽位永远轮不到,
+	# 单点故障即可让整条矿流停摆。游标每用掉一个槽位前移一位, 天然轮转。
+	var n := _pool.size()
+	for k in n:
+		var idx := (_spawn_cursor + k) % n
+		var ore: BeltOre = _pool[idx]
 		if ore.visible:
 			continue
 		var pos := Vector3(
@@ -327,12 +411,15 @@ func _spawn_one(prefill := false) -> void:
 		if ore_name in ALWAYS_SMALL:
 			tier_size = tier_size_s
 		var raw: float = _mesh_max_dim.get(ore_name, 1.0)
-		var scale_f := tier_size * _rng.randf_range(1.0 - size_jitter, 1.0 + size_jitter) / raw
+		var jitter := _rng.randf_range(1.0 - size_jitter, 1.0 + size_jitter)
+		var scale_f := tier_size * jitter / raw
+		var radius := tier_size * jitter * 0.5  # 碰撞球半径 = 世界最大边/2
 		ore.position = pos
 		ore.setup(ore_name, _meshes[ore_name], tier, TIER_AMOUNT[tier],
-			dir_world * speed, scale_f,
+			dir_world * speed, scale_f, radius,
 			spin_speed_min, spin_speed_max)
 		ore.set_drifting(true)
+		_spawn_cursor = (idx + 1) % n
 		return
 
 
@@ -348,12 +435,15 @@ func _tier_size(tier: String) -> float:
 
 
 func _pick_ore() -> String:
-	var total := normal_ore_weight + rare_ore_weight
+	var total := normal_ore_weight + ice_ore_weight + rare_ore_weight
 	if total <= 0.0:
 		return ORE_NORMAL.keys()[0]
+	var r := _rng.randf() * total
 	var names: Array
-	if _rng.randf() * total < normal_ore_weight:
+	if r < normal_ore_weight:
 		names = ORE_NORMAL.keys()
+	elif r < normal_ore_weight + ice_ore_weight:
+		names = ORE_ICE.keys()
 	else:
 		names = ORE_RARE.keys()
 	return names[_rng.randi_range(0, names.size() - 1)]
@@ -380,7 +470,7 @@ func _in_box(p: Vector3, c: Vector3, s: Vector3) -> bool:
 
 func _load_meshes() -> void:
 	_meshes.clear()
-	for table in [ORE_NORMAL, ORE_RARE]:
+	for table in [ORE_NORMAL, ORE_ICE, ORE_RARE]:
 		for ore_name in table:
 			var path: String = table[ore_name]
 			if not ResourceLoader.exists(path):

@@ -1,4 +1,4 @@
-; Engine configuration file.
+﻿; Engine configuration file.
 ; It's best edited using the editor UI and not directly,
 ; since the parameters that go here are not all obvious.
 ;
@@ -32,7 +32,5 @@ enabled=PackedStringArray("res://addons/godot_mcp_toolkit/plugin.cfg", "res://ad
 [physics]
 
 3d/physics_engine="Jolt Physics"
-
-[rendering]
-
-rendering_device/driver.windows="vulkan"
+3d/default_linear_damp=0.0
+3d/default_angular_damp=0.0
