@@ -70,6 +70,7 @@ func _build_ui() -> void:
 	_page1 = VBoxContainer.new()
 	_page1.add_theme_constant_override("separation", 12)
 	vbox.add_child(_page1)
+	_page1.add_child(_make_button("返回游戏", return_to_game))
 	_page1.add_child(_make_button("Setting", _show_page2))
 	_page1.add_child(_make_button("Exit Game", _exit_game))
 
@@ -127,6 +128,10 @@ func toggle_panel() -> void:
 	_root.visible = not _root.visible
 	if _root.visible:
 		_show_page1()
+
+
+func return_to_game() -> void:
+	_root.visible = false
 
 
 func show_page1() -> void:

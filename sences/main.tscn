@@ -19,7 +19,6 @@ volumetric_fog_length = 17.01
 volumetric_fog_ambient_inject = 2.58
 volumetric_fog_sky_affect = 0.0
 adjustment_enabled = true
-adjustment_contrast = 1.12
 adjustment_saturation = 1.08
 
 [node name="Main" type="Node3D" unique_id=1697865878]
@@ -79,7 +78,7 @@ spin_min = 1.0
 spin_max = 2.0
 
 [node name="PlanetSurface" parent="." unique_id=352280755 instance=ExtResource("5_mqxhw")]
-transform = Transform3D(1, 0, 0, 0, 0.9967051, -0.081110805, 0, 0.081110805, 0.9967051, 120.72702, -298.0803, -167.14005)
+transform = Transform3D(1, 0, 0, 0, 0.9967051, -0.081110805, 0, 0.081110805, 0.9967051, 125.82445, -275.0681, -167.14005)
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=959860228]
 environment = SubResource("Environment_jq8tk")

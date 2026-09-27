@@ -24,6 +24,15 @@ func _run() -> void:
 	_check(panel.is_panel_visible(), "ESC 打开面板")
 	_check(not panel.is_page2_active(), "打开后默认第一页")
 
+	# 返回游戏
+	panel.return_to_game()
+	await get_tree().process_frame
+	_check(not panel.is_panel_visible(), "返回游戏关闭面板")
+	_press_esc()
+	await get_tree().process_frame
+	await get_tree().process_frame
+	_check(panel.is_panel_visible(), "重新呼出")
+
 	# 进入第二页
 	panel.show_page2()
 	await get_tree().process_frame
