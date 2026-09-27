@@ -13,7 +13,7 @@ const FADE_TIME := 0.25
 const RACE_TIME := 0.25    # 光束从炮口"伸到"目标的时长
 const HOLD_ALPHA := 0.65
 
-@export var beam_half_width := 0.27
+@export var beam_half_width := 0.135
 ## 远档色调(近档颜色由 ramp 行决定, 磁轨行偏蓝)
 @export var beam_tint := Color(0.55, 0.75, 1.0)
 

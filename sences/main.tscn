@@ -20,7 +20,7 @@ volumetric_fog_ambient_inject = 2.58
 volumetric_fog_sky_affect = 0.0
 adjustment_enabled = true
 adjustment_contrast = 1.12
-adjustment_saturation = 1.31
+adjustment_saturation = 1.08
 
 [node name="Main" type="Node3D" unique_id=1697865878]
 
@@ -54,23 +54,6 @@ spot_range = 45.0
 spot_attenuation = 1.2
 spot_angle = 32.0
 
-[node name="StationSpotB" type="SpotLight3D" parent="MiningHub" unique_id=1746922107]
-transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 15, 2, -8)
-light_color = Color(1, 0.85, 0.6, 1)
-light_energy = 6.0
-light_volumetric_fog_energy = 6.0
-shadow_enabled = true
-spot_range = 45.0
-spot_attenuation = 1.2
-spot_angle = 32.0
-
-[node name="StationGlow" type="OmniLight3D" parent="MiningHub" unique_id=550804347]
-light_color = Color(0.7, 0.85, 1, 1)
-light_energy = 2.5
-light_volumetric_fog_energy = 4.0
-shadow_enabled = true
-omni_range = 60.0
-
 [node name="BeltFlow" parent="." unique_id=2112670759 instance=ExtResource("4_40i81")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 14.053265, 6.0505266, -8.207104)
 flow_speed = 1.5
@@ -79,7 +62,8 @@ target_count = 400
 spin_speed_min = 0.33
 spin_speed_max = 0.5
 tier_s_weight = 64.0
-tier_l_weight = 5.0
+tier_m_weight = 32.0
+tier_l_weight = 3.0
 tier_xl_weight = 1.0
 beam_color = Color(0.25, 0.65, 1, 0.5)
 

@@ -26,6 +26,8 @@ const TIER_AMOUNT := {"S": 100, "M": 500, "L": 2500, "XL": 5000}
 const ALWAYS_SMALL := ["goldSmall", "BlueGem"]
 ## 这些矿种永远只出 S 档(档位/储量锁死; 尺寸随档位自动走 S 区间)
 const S_TIER_ONLY := ["Mesh0"]
+## 牵引特写小窗(PiP)脚本; 运行时 _start_flow 创建, 捕获时绑定目标
+const CloseupCam := preload("res://scripts/TowCloseupCam.gd")
 
 @export_group("生成区")
 @export var spawn_center := Vector3(-100, 0, 0):
@@ -149,6 +151,7 @@ var _started := false
 var _station: Node3D
 var _beam_fx: GravityBeamFX
 var _beam_ids := {}
+var _closeup  # TowCloseupCam (CanvasLayer), 运行时创建
 
 
 func _ready() -> void:
@@ -253,12 +256,16 @@ func _capture(ore: BeltOre) -> void:
 	ore.start_capture(_station, dist / maxf(duration, 0.1), capture_spin_speed)
 	if _beam_fx:
 		_beam_ids[ore] = _beam_fx.spawn(_station, ore)
+	if _closeup:
+		_closeup.set_target(ore, _tier_size(ore.tier) * 0.5)
 
 
 func _kill_beam(ore: BeltOre) -> void:
 	if _beam_fx and _beam_ids.has(ore):
 		_beam_fx.kill(_beam_ids[ore])
 	_beam_ids.erase(ore)
+	if _closeup:
+		_closeup.clear_target(ore)
 
 
 func _start_flow() -> void:
@@ -277,6 +284,8 @@ func _start_flow() -> void:
 	if capture_enabled:
 		_beam_fx = GravityBeamFX.new()
 		add_child(_beam_fx)
+	_closeup = CloseupCam.new()
+	add_child(_closeup)
 	_pool.clear()
 	for i in target_count:
 		var ore := BeltOre.new()
