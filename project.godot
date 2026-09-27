@@ -35,4 +35,4 @@ enabled=PackedStringArray("res://addons/godot_mcp_toolkit/plugin.cfg", "res://ad
 
 [rendering]
 
-rendering_device/driver.windows="d3d12"
+rendering_device/driver.windows="vulkan"

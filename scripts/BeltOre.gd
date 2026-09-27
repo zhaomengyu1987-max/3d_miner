@@ -10,6 +10,7 @@ var velocity := Vector3.ZERO
 var spin_axis := Vector3.UP
 var spin_speed := 0.0
 var mesh_instance: MeshInstance3D
+var age := 0.0  # 存活计时(秒): BeltFlow 的最长存活保险丝用
 # 捕获态: 被空间站引力光束拉拽
 var captured := false
 var pull_target: Node3D
@@ -71,6 +72,7 @@ func set_drifting(on: bool) -> void:
 
 
 func _process(delta: float) -> void:
+	age += delta
 	if _spin_recover_time > 0.0:
 		_spin_recover_time = maxf(_spin_recover_time - delta, 0.0)
 		var t := 1.0 - _spin_recover_time / _spin_recover_total

@@ -1,6 +1,6 @@
 [gd_scene format=3 uid="uid://dpfwiuvtl4uy"]
 
-[ext_resource type="Material" path="res://assets/planet/materials/surface_unlit_mat.tres" id="1_i2b8j"]
+[ext_resource type="Material" path="res://assets/planet/materials/surface2_mat.tres" id="1_i2b8j"]
 [ext_resource type="Material" uid="uid://ceiswjimsbd62" path="res://assets/planet/materials/cloud_noise_mat.tres" id="3_yq5ra"]
 [ext_resource type="PlaneMesh" path="res://assets/planet/meshes/cloud_plane.tres" id="4_meofd"]
 [ext_resource type="Script" uid="uid://bqjow41oo2cm3" path="res://scripts/AtmosphereControl.gd" id="5_yq5ra"]

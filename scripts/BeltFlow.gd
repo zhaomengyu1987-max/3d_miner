@@ -57,6 +57,8 @@ const CloseupCam := preload("res://scripts/TowCloseupCam.gd")
 ## 每颗速度 = flow_speed ± speed_variance (绝对值 m/s), 下限 0.05 防反向
 @export var speed_variance := 0.25
 @export var target_count := 40
+## 单颗矿最长存活(秒): 保险丝, 防任何意外滞留的矿占死池子
+@export var max_ore_age_s := 600.0
 @export var prefill_corridor := true
 
 @export_group("矿石尺寸(按档位)")
@@ -166,6 +168,9 @@ func _process(delta: float) -> void:
 		return
 	var muzzle: Variant = _muzzle_pos()
 	var station_pos: Vector3 = _station.global_position if _station and is_instance_valid(_station) else Vector3.ZERO
+	# 消失区远端在流向轴上的坐标(每帧算一次, 避让/参数变化都实时正确)
+	var fd := flow_direction
+	var despawn_edge: float = despawn_center.dot(fd) 		+ 0.5 * (absf(fd.x) * despawn_size.x + absf(fd.y) * despawn_size.y + absf(fd.z) * despawn_size.z)
 	var active := 0
 	for ore in _pool:
 		if not ore.visible:
@@ -182,7 +187,9 @@ func _process(delta: float) -> void:
 				_kill_beam(ore)
 		else:
 			var lp := to_local(ore.global_position)
-			if _in_box(lp, despawn_center, despawn_size):
+			# 回收判定 v2: 沿流向越过消失区远端即回收——
+			# 旧"盒内命中"判定会被避让推挤的 Y/Z 偏移漏掉(矿飘出走廊永不回收→池子耗尽)
+			if lp.dot(fd) > despawn_edge or ore.age > max_ore_age_s:
 				ore.set_drifting(false)
 			elif _station != null and is_instance_valid(_station):
 				# 软避让: 靠近空间站时侧向推开, 绕行不穿模

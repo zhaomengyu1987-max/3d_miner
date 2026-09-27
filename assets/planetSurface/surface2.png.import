@@ -2,20 +2,17 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://dqky77kqxuth3"
-path.s3tc="res://.godot/imported/athanor_lod0_uw_structure_02a_glow.png-3cd7c1127cf146c166d760bcc4b116a0.s3tc.ctex"
+uid="uid://dhddq83eps0uc"
+path.s3tc="res://.godot/imported/surface2.png-ac6f80f63b31ef08b71cbfceef359a6f.s3tc.ctex"
 metadata={
 "imported_formats": ["s3tc_bptc"],
 "vram_texture": true
 }
-generator_parameters={
-"md5": "d97ce0bd69f9a9d7046f0d46704faf9e"
-}
 
 [deps]
 
-source_file="res://assets/models/building/athanor_lod0_uw_structure_02a_glow.png"
-dest_files=["res://.godot/imported/athanor_lod0_uw_structure_02a_glow.png-3cd7c1127cf146c166d760bcc4b116a0.s3tc.ctex"]
+source_file="res://assets/planetSurface/surface2.png"
+dest_files=["res://.godot/imported/surface2.png-ac6f80f63b31ef08b71cbfceef359a6f.s3tc.ctex"]
 
 [params]
 

@@ -32,7 +32,8 @@ script = ExtResource("1_r4dii")
 limit_y_max = 18.0
 
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=965481846]
-transform = Transform3D(0.6507177, -0.5800909, -0.48996028, 0, -0.6452621, 0.76396126, -0.7593198, -0.49712306, -0.41988346, 9.746216, -0.6904186, 4.38665)
+transform = Transform3D(0.98146236, -0.14641705, -0.12366777, -0.0747039, -0.8864852, 0.4566872, -0.17649643, -0.43898287, -0.8809899, 9.746216, 24.017136, 4.38665)
+light_energy = 2.0
 light_indirect_energy = 1.895
 light_volumetric_fog_energy = 0.0
 shadow_enabled = true
