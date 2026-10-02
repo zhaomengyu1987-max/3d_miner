@@ -365,7 +365,7 @@ func _spawn_ship(f: Freighter) -> void:
 			break
 	var node: Node3D = ShipScene.instantiate()
 	_ship_root.add_child(node)
-	var ship_len: float = SHIP_LEN[f.def_id]
+	var ship_len: float = SHIP_LEN.get(f.def_id, SHIP_LEN["standard"])
 	var berth := _berth_slot_pos(slot, ship_len)
 	# 任意角度进场: 来向随机方位, 距站 14~18m, 高度随机落差（不穿模——路径在环外）
 	var a := randf() * TAU
