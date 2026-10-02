@@ -1,11 +1,12 @@
 [gd_scene format=3 uid="uid://cekd7d8adtwrp"]
 
 [ext_resource type="Script" uid="uid://vakct7b1y8go" path="res://scripts/MiningCamera2.gd" id="1_r4dii"]
-[ext_resource type="PackedScene" uid="uid://blkbtc1yfvnrk" path="res://sences/MiningHub.tscn" id="2_1j6d1"]
+[ext_resource type="PackedScene" path="res://sences/StationRig.tscn" id="2_1j6d1"]
 [ext_resource type="PackedScene" path="res://sences/BeltFlow.tscn" id="4_40i81"]
 [ext_resource type="PackedScene" uid="uid://dpfwiuvtl4uy" path="res://sences/planetSurface.tscn" id="5_mqxhw"]
 [ext_resource type="PackedScene" path="res://sences/IceFlow.tscn" id="6_3dblt"]
 [ext_resource type="Script" uid="uid://c18f8u1qkfd20" path="res://scripts/dev/TimeWarp.gd" id="7_timewarp"]
+[ext_resource type="Script" path="res://scripts/dev/DebugViz.gd" id="8_dbgviz"]
 
 [sub_resource type="Environment" id="Environment_jq8tk"]
 background_energy_multiplier = 0.0
@@ -13,12 +14,6 @@ ambient_light_energy = 0.0
 fog_mode = 1
 fog_light_color = Color(0, 0.11476659, 0.29212424, 1)
 fog_density = 0.0
-volumetric_fog_enabled = true
-volumetric_fog_density = 0.01
-volumetric_fog_albedo = Color(0.3098643, 0.40636897, 0.49113578, 1)
-volumetric_fog_length = 17.01
-volumetric_fog_ambient_inject = 2.58
-volumetric_fog_sky_affect = 0.0
 adjustment_enabled = true
 adjustment_saturation = 1.08
 
@@ -37,21 +32,16 @@ transform = Transform3D(0.98146236, -0.14641705, -0.12366777, -0.0747039, -0.886
 light_color = Color(0.89411765, 0.95686275, 0.96862745, 1)
 light_energy = 3.0
 light_indirect_energy = 1.895
-light_volumetric_fog_energy = 0.0
-shadow_enabled = true
 directional_shadow_mode = 0
 directional_shadow_max_distance = 10.0
 sky_mode = 1
 
 [node name="MiningHub" parent="." unique_id=497343975 instance=ExtResource("2_1j6d1")]
-transform = Transform3D(-0.1647786, 0, -0.11334908, 0, 0.2, 0, 0.11334908, 0, -0.1647786, 0.55543995, 9.5821495, 3.9341278)
 
 [node name="StationSpotA" type="SpotLight3D" parent="MiningHub" unique_id=893310007]
 transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, -15, 2, 8)
 light_color = Color(0.6, 0.8, 1, 1)
 light_energy = 6.0
-light_volumetric_fog_energy = 6.0
-shadow_enabled = true
 spot_range = 45.0
 spot_attenuation = 1.2
 spot_angle = 32.0
@@ -92,8 +82,6 @@ environment = SubResource("Environment_jq8tk")
 [node name="OmniLight3D" type="OmniLight3D" parent="." unique_id=1737578328]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 37.920456, 7.466568, -15.418301)
 light_energy = 1.5
-light_volumetric_fog_energy = 5.728
-light_size = 1.0
 light_negative = true
 light_specular = 0.0
 omni_range = 100.0
@@ -101,3 +89,6 @@ omni_attenuation = 0.05
 
 [node name="TimeWarp" type="Node" parent="." unique_id=1419856581]
 script = ExtResource("7_timewarp")
+
+[node name="DebugViz" type="Node3D" parent="."]
+script = ExtResource("8_dbgviz")

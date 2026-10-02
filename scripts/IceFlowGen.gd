@@ -109,13 +109,15 @@ func _build() -> void:
 		pm.gravity = Vector3.ZERO
 		# 3D 网格粒子的旋转必须走 rotation_3d 通道:
 		# angle/angular_velocity 仅在 disable_z / rotate_y / BILLBOARD 时生效(官方文档)
-		pm.use_rotation_3d = true
-		pm.rotation_3d_min = Vector3.ZERO
-		pm.rotation_3d_max = Vector3(360.0, 360.0, 360.0)  # 随机初始姿态(度)
-		pm.use_rotation_velocity_3d = true
-		var spin_d := rad_to_deg(spin_max)  # 导出口径 rad/s → 引擎 度/s
-		pm.rotation_velocity_3d_min = Vector3(-spin_d, -spin_d, -spin_d)
-		pm.rotation_velocity_3d_max = Vector3(spin_d, spin_d, spin_d)
+		# rotation_3d 通道为 4.7 新增: 4.6 运行时跳过(冰块不自旋, 表演冰带照常显示) — 2026-09-30 兼容
+		if "use_rotation_3d" in pm:
+			pm.use_rotation_3d = true
+			pm.rotation_3d_min = Vector3.ZERO
+			pm.rotation_3d_max = Vector3(360.0, 360.0, 360.0)  # 随机初始姿态(度)
+			pm.use_rotation_velocity_3d = true
+			var spin_d := rad_to_deg(spin_max)  # 导出口径 rad/s → 引擎 度/s
+			pm.rotation_velocity_3d_min = Vector3(-spin_d, -spin_d, -spin_d)
+			pm.rotation_velocity_3d_max = Vector3(spin_d, spin_d, spin_d)
 		pm.scale_min = scale_min
 		pm.scale_max = scale_max
 		p.process_material = pm

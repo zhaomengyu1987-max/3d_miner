@@ -16,6 +16,11 @@ const HOLD_ALPHA := 0.65
 @export var beam_half_width := 0.135
 ## 远档色调(近档颜色由 ramp 行决定, 磁轨行偏蓝)
 @export var beam_tint := Color(0.55, 0.75, 1.0)
+## ramp 图集行号(束类型): 0磁轨蓝 / 1红 / 2绿 / 3橙金(中黄激光用这个) / 4重型磁轨蓝紫
+@export var ramp_row := 0.0
+## 强制束色(2026-09-30): a>0 时锁死整条束的色相/饱和(保留明暗结构)——引力=蓝/采矿=金专用,
+## 不再依赖共享 ramp 图集行; 设了它才会复制独立材质实例
+@export var force_beam_color := Color(0, 0, 0, 0)
 
 var _src: Array = []
 var _dst: Array = []
@@ -30,10 +35,19 @@ var _accum := 0.0
 const UPDATE_HZ := 30.0
 
 
+## 材质在 _ready 挂（force_beam_color 等导出属性此时已被调用方设好）：
+## 有强制束色 → 复制独立材质实例并下发参数; 没有 → 共享原材质(走 ramp 行)
+func _ready() -> void:
+	var mat: ShaderMaterial = load("res://assets/fx/rail/rail_blast.tres")
+	if force_beam_color.a > 0.001:
+		mat = mat.duplicate()
+		mat.set_shader_parameter("beam_force_color", force_beam_color)
+	material_override = mat
+
+
 func _init() -> void:
 	var mesh := QuadMesh.new()
 	mesh.size = Vector2(2, 2)
-	var mat: ShaderMaterial = load("res://assets/fx/rail/rail_blast.tres")
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.use_colors = true
@@ -42,7 +56,6 @@ func _init() -> void:
 	mm.instance_count = CAPACITY
 	mm.visible_instance_count = CAPACITY  # 空槽用零缩放藏住
 	multimesh = mm
-	material_override = mat
 	cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	for i in CAPACITY:
 		_src.append(null)
@@ -169,4 +182,4 @@ func _update_instance(i: int, cam_pos: Vector3) -> void:
 	if _state[i] == 2:
 		alpha = HOLD_ALPHA * (1.0 - clampf(_t[i] / _dur[i], 0.0, 1.0))
 	multimesh.set_instance_color(i, Color(tint.r, tint.g, tint.b, alpha))
-	multimesh.set_instance_custom_data(i, Color(_phase[i], 0.0, 0.0, len))
+	multimesh.set_instance_custom_data(i, Color(_phase[i], ramp_row, 0.0, len))

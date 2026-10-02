@@ -4,31 +4,12 @@ extends Node3D
 
 ## 可玩矿石层: 生成区出生 → 沿流向漂移 → 进入消失区回收(对象池循环)
 ## 编辑器内: 显示橙/红调试框; 运行时: 池化生成 BeltOre
-## 矿石 mesh 来自 assets/NormalOre/(普通5种) 与 assets/rareOre/(稀有6种)
+## 矿种/权重/模型路径由 scripts/economy/GameData.gd 统一定义(制造系统数据表)
 
-const ORE_NORMAL := {
-	"NormalOre": "res://assets/NormalOre/NormalOre.glb",
-	"metalOre": "res://assets/NormalOre/metalOre.glb",
-	"Mesh0": "res://assets/NormalOre/Mesh0.glb",
-	"RockOre": "res://assets/NormalOre/RockOre.glb",
-}
-## 冰矿组: 后续新冰块形态往这里添行(GLB 文件位置不限, 按名索引)
-const ORE_ICE := {
-	"IceOre": "res://assets/NormalOre/IceOre.glb",
-}
-const ORE_RARE := {
-	"goldSmall": "res://assets/rareOre/goldSmall.glb",
-	"IronOre": "res://assets/rareOre/IronOre.glb",
-	"BlueGem": "res://assets/rareOre/BlueGem.glb",
-	"goldenAsteroid": "res://assets/rareOre/goldenAsteroid.glb",
-	"iceBlack": "res://assets/rareOre/iceBlack.glb",
-}
 # superbigGold 不进流动矿池: 超大金矿, 预留给碎裂效果演示
 const TIER_AMOUNT := {"S": 100, "M": 500, "L": 2500, "XL": 5000}
 ## 这些矿种永远渲染为小尺寸(档位/储量照常掷骰)
 const ALWAYS_SMALL := ["goldSmall", "BlueGem"]
-## 这些矿种永远只出 S 档(档位/储量锁死; 尺寸随档位自动走 S 区间)
-const S_TIER_ONLY := ["Mesh0"]
 ## 牵引特写小窗(PiP)脚本; 运行时 _start_flow 创建, 捕获时绑定目标
 const CloseupCam := preload("res://scripts/TowCloseupCam.gd")
 
@@ -91,17 +72,11 @@ const CloseupCam := preload("res://scripts/TowCloseupCam.gd")
 		spin_speed_max = maxf(v, 0.0)
 
 @export_group("矿池权重")
-## 普通4种 / 冰矿 / 稀有5种 三组出现权重(组内等概率)
-@export var normal_ore_weight := 70.0:
-	set(v):
-		normal_ore_weight = maxf(v, 0.0)
-@export var rare_ore_weight := 20.0:
-	set(v):
-		rare_ore_weight = maxf(v, 0.0)
-## 冰矿组权重(冰带主题, 后续扩充形态)
-@export var ice_ore_weight := 15.0:
-	set(v):
-		ice_ore_weight = maxf(v, 0.0)
+## [已废弃] 矿种出现权重改由 GameData.ORES 每矿独立定义(§2.3 分层稀有度)。
+## 保留变量名以免 main.tscn 旧覆盖报错, 运行时不再读取。
+@export var normal_ore_weight := 70.0
+@export var rare_ore_weight := 20.0
+@export var ice_ore_weight := 15.0
 
 @export_group("档位权重(资源池掷骰)")
 @export var tier_s_weight := 50.0
@@ -200,9 +175,9 @@ func _process(delta: float) -> void:
 			continue
 		active += 1
 		if ore.captured:
-			# 送达判定
+			# 送达判定 → 入经济库存(制造系统)
 			if muzzle != null and ore.global_position.distance_to(muzzle) <= capture_reach:
-				print("BeltFlow: 送达 %s %s 储量%d" % [ore.ore_name, ore.tier, ore.amount])
+				Economy.deliver_ore(ore.ore_name, ore.amount)
 				_kill_beam(ore)
 				ore.set_drifting(false)
 			elif muzzle == null:
@@ -265,7 +240,8 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _release_all() -> void:
 	for ore in _pool:
-		if ore.captured:
+		# 无人机拖曳的矿不归玩家松手管
+		if ore.captured and not ore.auto_towed:
 			_kill_beam(ore)
 			ore.stop_capture(_rng.randf_range(spin_recover_min, spin_recover_max))
 
@@ -367,6 +343,8 @@ func _start_flow() -> void:
 	_measure_station_radius()
 	if capture_enabled:
 		_beam_fx = GravityBeamFX.new()
+		# 引力激光锁死蓝色（2026-09-30 拍板：引力=蓝，采矿=金）
+		_beam_fx.force_beam_color = Color(0.3, 0.6, 1.0, 1.0)
 		add_child(_beam_fx)
 	_closeup = CloseupCam.new()
 	add_child(_closeup)
@@ -399,9 +377,14 @@ func _spawn_one(prefill := false) -> void:
 		if prefill:
 			pos.x = lerpf(spawn_center.x, despawn_center.x, _rng.randf())
 		var ore_name := _pick_ore()
+		if not _meshes.has(ore_name):
+			# 兜底: 权重表有但 mesh 加载失败(资源缺失) → 换任意可用矿
+			if _meshes.is_empty():
+				return
+			ore_name = _meshes.keys()[0]
 		var tier := _pick_tier()
-		if ore_name in S_TIER_ONLY:
-			tier = "S"
+		if GameData.ore_s_only(ore_name):
+			tier = "S"  # 模型细节撑不起大体积的矿锁死 S 档(GameData.ORES s_only 字段)
 		var speed := maxf(flow_speed + _rng.randf_range(-speed_variance, speed_variance), 0.05)
 		# 流向转到世界空间: 节点被挪动/旋转后矿流跟随节点朝向
 		var dir_world := global_transform.basis * flow_direction
@@ -423,6 +406,40 @@ func _spawn_one(prefill := false) -> void:
 		return
 
 
+## 自动矿机取目标: 池内可见、未被捕获、指定档位、未被认领的最近矿
+## 任意档位、储量最大的空闲矿（护卫舰 2026-10-02 拍板: 全类型皆挖、优先大块）
+func get_free_ore_biggest(claimed: Array) -> BeltOre:
+	var best: BeltOre = null
+	for ore in _pool:
+		if not ore.visible or ore.captured or ore in claimed:
+			continue
+		if best == null or ore.amount > best.amount:
+			best = ore
+	return best
+
+
+func get_free_ore(tier: String, claimed: Array) -> BeltOre:
+	var best: BeltOre = null
+	var best_d := INF
+	var ref: Variant = _muzzle_pos()
+	var ref_pos: Vector3 = ref if ref != null else global_position
+	for ore in _pool:
+		if not ore.visible or ore.captured or ore.tier != tier:
+			continue
+		if ore in claimed:
+			continue
+		var d := ref_pos.distance_squared_to(ore.global_position)
+		if d < best_d:
+			best_d = d
+			best = ore
+	return best
+
+
+## 玩家捕获时长档中值(无人机拖拽速度基准用)
+func capture_duration_mid() -> float:
+	return (capture_duration_min + capture_duration_max) * 0.5
+
+
 func _tier_size(tier: String) -> float:
 	match tier:
 		"M":
@@ -435,18 +452,8 @@ func _tier_size(tier: String) -> float:
 
 
 func _pick_ore() -> String:
-	var total := normal_ore_weight + ice_ore_weight + rare_ore_weight
-	if total <= 0.0:
-		return ORE_NORMAL.keys()[0]
-	var r := _rng.randf() * total
-	var names: Array
-	if r < normal_ore_weight:
-		names = ORE_NORMAL.keys()
-	elif r < normal_ore_weight + ice_ore_weight:
-		names = ORE_ICE.keys()
-	else:
-		names = ORE_RARE.keys()
-	return names[_rng.randi_range(0, names.size() - 1)]
+	# 每矿独立权重(§2.3), 未做模型的矿自动跳过; 返回值为 GLB 资产名
+	return GameData.pick_ore_asset(_rng)
 
 
 func _pick_tier() -> String:
@@ -470,23 +477,25 @@ func _in_box(p: Vector3, c: Vector3, s: Vector3) -> bool:
 
 func _load_meshes() -> void:
 	_meshes.clear()
-	for table in [ORE_NORMAL, ORE_ICE, ORE_RARE]:
-		for ore_name in table:
-			var path: String = table[ore_name]
-			if not ResourceLoader.exists(path):
-				push_warning("BeltFlow: 缺少 %s" % path)
-				continue
-			var packed: PackedScene = load(path)
-			if packed == null:
-				continue
-			var inst := packed.instantiate()
-			var mesh := _first_mesh(inst)
-			inst.free()
-			if mesh != null:
-				_meshes[ore_name] = mesh
-				var aabb := mesh.get_aabb()
-				var md := maxf(aabb.size.x, maxf(aabb.size.y, aabb.size.z))
-				_mesh_max_dim[ore_name] = maxf(md, 0.001)
+	for ore_id in GameData.ORES:
+		var def: Dictionary = GameData.ORES[ore_id]
+		var path: String = def["path"]
+		if path == "":
+			continue  # 模型未做(如稀有矿D), 不进矿池
+		if not ResourceLoader.exists(path):
+			push_warning("BeltFlow: 缺少 %s" % path)
+			continue
+		var packed: PackedScene = load(path)
+		if packed == null:
+			continue
+		var inst := packed.instantiate()
+		var mesh := _first_mesh(inst)
+		inst.free()
+		if mesh != null:
+			_meshes[def["asset"]] = mesh
+			var aabb := mesh.get_aabb()
+			var md := maxf(aabb.size.x, maxf(aabb.size.y, aabb.size.z))
+			_mesh_max_dim[def["asset"]] = maxf(md, 0.001)
 	if _meshes.is_empty():
 		push_warning("BeltFlow: 没有可用矿石 mesh")
 

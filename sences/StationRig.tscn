@@ -1,0 +1,53 @@
+[gd_scene format=3 uid="uid://chg2t1nsvf33u"]
+
+[ext_resource type="PackedScene" uid="uid://ckbxe2aqdal1n" path="res://assets/models/building/athanor_lod0.glb" id="1_athanor"]
+
+[sub_resource type="BoxMesh" id="box"]
+size = Vector3(8.36, 3.97, 8.37)
+
+[sub_resource type="StandardMaterial3D" id="boxmat"]
+transparency = 1
+shading_mode = 0
+albedo_color = Color(1, 0.6, 0.2, 0.08)
+
+[sub_resource type="TorusMesh" id="ringedge"]
+inner_radius = 6.48
+outer_radius = 6.66
+
+[sub_resource type="StandardMaterial3D" id="edgemat"]
+transparency = 1
+shading_mode = 0
+albedo_color = Color(1, 1, 1, 0.35)
+
+[sub_resource type="TorusMesh" id="dockring"]
+inner_radius = 8.0
+outer_radius = 8.16
+
+[sub_resource type="StandardMaterial3D" id="dockmat"]
+transparency = 1
+shading_mode = 0
+albedo_color = Color(0.3, 0.9, 1, 0.3)
+
+[node name="MiningHub" type="Node3D" unique_id=1328484308]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.55544, 9.58215, 3.934128)
+
+[node name="AthanorGroup" type="Node3D" parent="." unique_id=1011920668]
+transform = Transform3D(-0.1647786, 0, -0.11334908, 0, 0.2, 0, 0.11334908, 0, -0.1647786, 0, 0, 0)
+
+[node name="athanor" parent="AthanorGroup" unique_id=69951587 instance=ExtResource("1_athanor")]
+transform = Transform3D(0.1, 0, 0, 0, 0.1, 0, 0, 0, 0.1, -1.310475, 0, 1.5530918)
+
+[node name="DockBox" type="MeshInstance3D" parent="." unique_id=580903695]
+transform = Transform3D(0.7208001, 0, 0, 0, 1, 0, 0, 0, 0.72289884, 0.04914379, 0, -0.38764238)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("boxmat")
+
+[node name="RingEdge" type="MeshInstance3D" parent="." unique_id=1877135177]
+transform = Transform3D(0.46789813, 0, 0, 0, 1, 0, 0, 0, 0.46584037, 0, 0, -0.41420078)
+mesh = SubResource("ringedge")
+surface_material_override/0 = SubResource("edgemat")
+
+[node name="DockRing" type="MeshInstance3D" parent="." unique_id=2107660372]
+transform = Transform3D(0.40763277, 0, 0, 0, 1, 0, 0, 0, 0.4019217, 0.04212284, 0, -0.37909937)
+mesh = SubResource("dockring")
+surface_material_override/0 = SubResource("dockmat")

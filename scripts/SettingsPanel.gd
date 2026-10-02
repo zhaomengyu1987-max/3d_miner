@@ -27,6 +27,8 @@ func _input(event: InputEvent) -> void:
 		return
 	if event is InputEventKey and event.pressed and not event.echo \
 			and event.keycode == KEY_ESCAPE:
+		if EconUiRoot.any_modal_open():
+			return  # 制造系统界面开着: ESC 归它处理(优先关面板)
 		toggle_panel()
 		get_viewport().set_input_as_handled()
 
