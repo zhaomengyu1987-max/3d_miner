@@ -14,6 +14,9 @@ var cargo_units := 0.0    # 已占舱位
 var funds := 0.0          # 本次收购额度（用完即走）
 var dock_age := 0.0       # 已停靠秒数（超时离站保险丝）
 var departing := false
+var is_dealer := false     # 世界系统"军需采购代理"标记：停留由 WorldState 的阶段结束日决定，
+                            # 不吃 after_trade() 的"货单吃满就走"规则（见 Economy._auto_trade）
+var dwell_override := -1.0 # >0 时覆盖 Economy.dwell_total()（秒）；is_dealer 等特殊货舰专用
 
 ## 收购清单：[{goods, price, qty_left}]（price = ₡/单位）
 var buy_offers: Array = []
