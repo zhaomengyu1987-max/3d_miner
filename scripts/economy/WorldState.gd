@@ -1,8 +1,9 @@
 extends Node
 
-## 世界系统 M1 —— 局部冲突状态机（帝国 vs 南方联盟）。
-## 范围见 docs/世界系统路线图.md：单站点、单条主线；冻结多站扩张/自动化；
-## 10 小国与 20 托拉斯只留数据骨架（GameData.WORLD_FACTIONS 以后扩表），不接入模拟。
+## 世界系统 M1+M2 —— 局部冲突状态机（帝国 vs 南方联盟）+ 10 小国静态阵营/倒戈。
+## 范围见 docs/世界系统路线图.md：单站点、只有一条主线在跑状态机（10 小国不会自己
+## 单独开战线，只会在 empire/southern 之间倒戈）；20 托拉斯仍保持中立，冻结到 M5；
+## 多站点扩张/自动化仍冻结到 M4。
 ##
 ## 节奏（2026-10-02 拍板）：和平 60 天 → 筹备 30 天 → 开战 10 天 → 循环往复。
 ## 相位纯按 Economy.day 推导（跟 Economy.war_active() 的周期写法同一个思路，不占存档字段）；
@@ -28,6 +29,10 @@ var rng := RandomNumberGenerator.new()
 
 var _current_faction := "empire"
 var _save_path := "user://world_state_save.json"
+
+## M2：10 小国当前阵营归属（fid -> "empire"/"southern"）。初始值来自
+## GameData.MINOR_FACTIONS，倒戈事件会原地改写，随 _save()/_load() 持久化。
+var _minor_bloc: Dictionary = {}
 
 
 func _ready() -> void:
@@ -88,6 +93,7 @@ func _enter_phase(new_phase: int) -> void:
 			var cycle_index := (Economy.day - 1) / maxi(_cycle_len(), 1)
 			_current_faction = "empire" if cycle_index % 2 == 0 else "southern"
 			stockpile = 0.0
+			_roll_minor_defections()
 			Economy.post_event("边境传来军情：%s 开始大规模军备调度，物流需求预计持续走高" % \
 				String(GameData.WORLD_FACTIONS[_current_faction]["name"]), "warn")
 		Phase.WAR:
@@ -164,8 +170,51 @@ func freighter_frequency_mult() -> float:
 
 # ================= 补给效率占位（星图落地前用三档顶替，调用方接口不变） =================
 
-func supply_efficiency(_faction_id: String) -> float:
-	return float(GameData.STATION_EFFICIENCY.get(GameData.STATION_REGION, 0.5))
+## M2：补给效率 = 区域占位基值 × 盟友系数。盟友系数由 10 小国当前阵营归属算出
+## （相对 5:5 基线每多/少一个盟友 ±minor_ally_mult_per_nation），呼应路线图里
+## "货舰扫货积极性 M2+ 可直接接入" 的拍板——阵营归属一边倒，补给效率跟着一起动。
+func supply_efficiency(faction_id: String) -> float:
+	var base := float(GameData.STATION_EFFICIENCY.get(GameData.STATION_REGION, 0.5))
+	return base * _ally_mult(faction_id)
+
+
+## 10 小国里当前归属 bloc 的数量（0~10）。
+func ally_count(bloc: String) -> int:
+	var n := 0
+	for fid in _minor_bloc:
+		if String(_minor_bloc[fid]) == bloc:
+			n += 1
+	return n
+
+
+## 盟友系数：相对 5:5 基线，每多/少一个盟友 ±minor_ally_mult_per_nation，夹在
+## [minor_ally_mult_min, minor_ally_mult_max] 内（当前参数下正常跑不到夹限）。
+func _ally_mult(bloc: String) -> float:
+	var per_nation: float = float(GameData.WORLD["minor_ally_mult_per_nation"])
+	var raw := 1.0 + float(ally_count(bloc) - 5) * per_nation
+	return clampf(raw, float(GameData.WORLD["minor_ally_mult_min"]), float(GameData.WORLD["minor_ally_mult_max"]))
+
+
+## 初始化/重置 10 小国归属为 GameData.MINOR_FACTIONS 里的默认值。
+func _init_minor_factions() -> void:
+	_minor_bloc.clear()
+	for fid in GameData.MINOR_FACTIONS:
+		_minor_bloc[fid] = String(GameData.MINOR_FACTIONS[fid]["bloc"])
+
+
+## 每次进入筹备期触发一轮：10 小国各自独立判定是否倒戈（翻转 bloc），逐条播报。
+func _roll_minor_defections() -> void:
+	var chance: float = float(GameData.WORLD["minor_defect_chance"])
+	for fid in GameData.MINOR_FACTIONS.keys():
+		if rng.randf() >= chance:
+			continue
+		var cur_bloc := String(_minor_bloc.get(fid, String(GameData.MINOR_FACTIONS[fid]["bloc"])))
+		var new_bloc := "southern" if cur_bloc == "empire" else "empire"
+		_minor_bloc[fid] = new_bloc
+		Economy.post_event("边境风声：%s 倒戈——阵营由【%s】转投【%s】" % [
+			String(GameData.MINOR_FACTIONS[fid]["name"]),
+			String(GameData.WORLD_FACTIONS[cur_bloc]["name"]),
+			String(GameData.WORLD_FACTIONS[new_bloc]["name"])], "warn")
 
 
 # ================= 玩家反哺：Economy 广播的军需品实际成交 =================
@@ -256,13 +305,17 @@ func _refresh_dealer_offers() -> void:
 ## 需求规模：筹备期随进度爬升(0.3→1.0)；开战期随"本场战争烈度 × 剩余比例"伸缩
 ## （供给枯竭则订单自然萎缩，呼应"后勤跟不上，战事自己偃旗息鼓"）。
 func _demand_scale() -> float:
+	var base := 0.0
 	if phase == Phase.BUILDUP:
-		return lerpf(0.3, 1.0, _phase_progress(Economy.day))
-	if phase == Phase.WAR:
+		base = lerpf(0.3, 1.0, _phase_progress(Economy.day))
+	elif phase == Phase.WAR:
 		var intensity: float = war_initial_stockpile / float(GameData.WORLD["stockpile_target"])
 		var remaining_frac: float = stockpile / maxf(war_initial_stockpile, 1.0)
-		return maxf(intensity, 0.1) * lerpf(0.4, 1.0, remaining_frac)
-	return 0.0
+		base = maxf(intensity, 0.1) * lerpf(0.4, 1.0, remaining_frac)
+	else:
+		return 0.0
+	# M2：当面主战方的盟友越多，采购代理的扫货需求基数跟着放大（反之收缩）。
+	return base * _ally_mult(_current_faction)
 
 
 # ================= 轻量独立存档（不碰 Economy 的存档结构，降低改动风险） =================
@@ -272,6 +325,7 @@ func _save() -> void:
 		"stockpile": stockpile,
 		"war_initial_stockpile": war_initial_stockpile,
 		"current_faction": _current_faction,
+		"minor_bloc": _minor_bloc,
 	}
 	var file := FileAccess.open(_save_path, FileAccess.WRITE)
 	if file:
@@ -280,6 +334,7 @@ func _save() -> void:
 
 
 func _load() -> void:
+	_init_minor_factions()  # 先填默认 5:5，读档成功再按存档覆盖；没有存档就停在默认值
 	if not FileAccess.file_exists(_save_path):
 		return
 	var file := FileAccess.open(_save_path, FileAccess.READ)
@@ -292,6 +347,11 @@ func _load() -> void:
 	stockpile = float(parsed.get("stockpile", 0.0))
 	war_initial_stockpile = float(parsed.get("war_initial_stockpile", 0.0))
 	_current_faction = String(parsed.get("current_faction", "empire"))
+	var saved_bloc: Variant = parsed.get("minor_bloc", null)
+	if typeof(saved_bloc) == TYPE_DICTIONARY:
+		for fid in saved_bloc:
+			if _minor_bloc.has(fid):
+				_minor_bloc[fid] = String(saved_bloc[fid])
 
 
 ## 测试/调试钩子：清空世界系统状态（配合 Economy.debug_reset 在测试里一起调）
@@ -300,6 +360,7 @@ func debug_reset() -> void:
 	stockpile = 0.0
 	war_initial_stockpile = 0.0
 	_current_faction = "empire"
+	_init_minor_factions()
 	_despawn_dealer("")
 	if FileAccess.file_exists(_save_path):
 		DirAccess.remove_absolute(_save_path)

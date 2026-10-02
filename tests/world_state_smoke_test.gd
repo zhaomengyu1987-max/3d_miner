@@ -27,6 +27,7 @@ func _ready() -> void:
 	_test_dealer_lifecycle()
 	_test_frequency_mult()
 	_test_war_transition_and_burn()
+	_test_minor_defection()
 	_cleanup()
 	if _fails.is_empty():
 		print("WORLDSTATE_TEST_PASS")
@@ -149,6 +150,40 @@ func _test_war_transition_and_burn() -> void:
 	Economy.day_changed.emit(Economy.day)
 	_check(WorldState.phase == WorldState.Phase.PEACE, "战争结束回到和平期")
 	_check(WorldState.dealer == null, "和平期采购代理已撤离")
+
+
+func _test_minor_defection() -> void:
+	print("[minor defection (M2)]")
+	WorldState.debug_reset()
+	_check(WorldState.ally_count("empire") == 5, "初始5:5分配(empire=%d)" % WorldState.ally_count("empire"))
+	_check(WorldState.ally_count("southern") == 5, "初始5:5分配(southern=%d)" % WorldState.ally_count("southern"))
+	_check(absf(WorldState._ally_mult("empire") - 1.0) < 0.0001, "5:5基线下盟友系数=1.0")
+	# 多轮"进入筹备期"制造足够的独立判定次数，统计意义上几乎必然至少倒戈一次
+	# （10国 × 0.12概率 × 20轮 ≈ 期望24次判定命中，近乎确定性）。
+	var changed := false
+	for cycle in 20:
+		var cycle_len := WorldState._cycle_len()
+		Economy.day = cycle * cycle_len + 1  # 先落回和平期
+		Economy.day_changed.emit(Economy.day)
+		Economy.day = cycle * cycle_len + 1 + int(GameData.WORLD["peace_days"])  # 再跳进筹备期第一天
+		Economy.day_changed.emit(Economy.day)
+		if WorldState.ally_count("empire") != 5:
+			changed = true
+	_check(changed, "20轮筹备期后至少发生过一次倒戈（概率性校验）")
+	_check(WorldState.ally_count("empire") + WorldState.ally_count("southern") == 10,
+		"阵营总数守恒=10(empire=%d, southern=%d)" % [WorldState.ally_count("empire"), WorldState.ally_count("southern")])
+	# 盟友系数：人为把全部10国压到一边，验证供需两处都会跟着放大/收缩
+	for fid in GameData.MINOR_FACTIONS:
+		WorldState._minor_bloc[fid] = "empire"
+	_check(WorldState.ally_count("empire") == 10, "人为全压empire后ally_count=10")
+	var mult_all_in: float = WorldState._ally_mult("empire")
+	_check(mult_all_in > 1.0, "盟友全倒向empire时系数>1.0(%.3f)" % mult_all_in)
+	var eff_all_in := WorldState.supply_efficiency("empire")
+	for fid in GameData.MINOR_FACTIONS:
+		WorldState._minor_bloc[fid] = "southern"
+	var eff_isolated := WorldState.supply_efficiency("empire")
+	_check(eff_all_in > eff_isolated, "盟友多时补给效率(%.4f) > 盟友全失时(%.4f)" % [eff_all_in, eff_isolated])
+	WorldState.debug_reset()
 
 
 func _cleanup() -> void:
