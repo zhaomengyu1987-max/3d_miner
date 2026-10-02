@@ -15,6 +15,7 @@ signal market_changed            # 本地市场挂单/成交变化
 signal freighters_changed
 signal event_posted(text: String, kind: String)  # kind: info / good / rare / warn
 signal day_changed(day: int)
+signal military_goods_sold(goods_id: String, qty: int, price: float)  # 世界系统钩子：军需品实际成交广播（仅玩家卖出方向）
 
 var save_path := "user://economy_save.json"  # 测试可重定向，避免污染真存档
 const StationModulesScript := preload("res://scripts/economy/StationModules.gd")
@@ -159,7 +160,9 @@ func _process(delta: float) -> void:
 	var dwell := dwell_total()
 	for f in berths.duplicate():
 		f.dock_age += delta
-		if f.dock_age >= dwell:
+		# dwell_override：世界系统的采购代理(is_dealer)等特殊货舰用它覆盖固定停留时长
+		var eff_dwell: float = f.dwell_override if f.dwell_override > 0.0 else dwell
+		if f.dock_age >= eff_dwell:
 			_depart(f, "停留结束")
 	_advance_jobs(delta)
 	# 自动成交节拍：货舰与本地市场挂单每秒撮合一次
@@ -173,6 +176,11 @@ func _process(delta: float) -> void:
 ## 【单一来源】显示与超时判定必须用同一个值，否则加速模式下倒计时会骗人。
 func dwell_total() -> float:
 	return float(GameData.ECON["freighter_dwell_s"]) / (50.0 if debug_instant else 1.0)
+
+
+## 一个游戏日对应的真实秒数（世界系统按"天"换算特殊货舰停留秒数要用这个，不直接碰 _day_length）
+func day_length() -> float:
+	return _day_length
 
 
 ## 货舰剩余停留秒数（订单簿"剩余"列 / 机库倒计时用）
@@ -190,7 +198,7 @@ func _roll_visit_schedule() -> void:
 	var free_berths := berths_available()
 	if free_berths <= 0:
 		return
-	var mult := 1.0
+	var mult := WorldState.freighter_frequency_mult()
 	var visits := free_berths * GameData.ECON["visits_per_berth"] * mult
 	var n := int(floor(visits)) + (1 if rng.randf() < visits - floor(visits) else 0)
 	var table: Dictionary = GameData.SPAWN_TABLE[clampi(hangar_lv, 1, 3)]
@@ -241,6 +249,16 @@ func _depart(f: Freighter, reason: String) -> void:
 	berths.erase(f)
 	freighters_changed.emit()
 	post_event("%s 离站（%s）" % [f.name, reason], "info")
+
+
+## 世界系统等外部调用方对接一艘"特殊货舰"（如采购代理）：占用正常泊位；
+## 泊位已满时返回 false，由调用方自行在下一天重试（不强行挤占）。
+func dock_special_freighter(f: Freighter) -> bool:
+	if berths_available() <= 0:
+		return false
+	berths.append(f)
+	freighters_changed.emit()
+	return true
 
 
 func summon_smuggler() -> String:
@@ -587,7 +605,8 @@ func _auto_trade(dt: float) -> void:
 		var used_sell := _freighter_sells(f, rate - float(used_buy))
 		if used_buy > 0 or used_sell > 0:
 			traded = true
-		if f.after_trade():
+		# 世界系统的采购代理(is_dealer)靠 WorldState 的阶段结束日离港，不吃"货单吃满就走"的规则
+		if not f.is_dealer and f.after_trade():
 			_depart(f, "货单完成")
 	if traded:
 		market_changed.emit()
@@ -615,6 +634,8 @@ func _freighter_buys(f: Freighter, budget: float) -> int:
 			if n <= 0:
 				continue
 			_log_trade(String(offer["goods"]), price, n)
+			if GameData.is_military(String(offer["goods"])):
+				military_goods_sold.emit(String(offer["goods"]), n, price)
 			listing["qty"] = int(listing["qty"]) - n
 			offer["qty_left"] = float(offer["qty_left"]) - n
 			f.cargo_units += n * GameData.good_volume(String(offer["goods"]))

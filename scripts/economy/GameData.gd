@@ -203,6 +203,43 @@ const DEMAND := {
 }
 
 
+# ================= 世界系统 M1：局部冲突状态机（草案） =================
+# 设计与路线图见 docs/世界系统路线图.md。M1 范围：冻结多站扩张/自动化；
+# 10 小国 + 20 托拉斯只留数据骨架位置，不接入模拟——只有 empire/southern 这一条主线真正跑。
+
+## 阵营数据骨架（先按两方落地；以后解冻小国/托拉斯时在这里扩表，调用方接口不用改）。
+const WORLD_FACTIONS := {
+	"empire": {"name": "帝国", "bloc": "empire"},
+	"southern": {"name": "南方联盟", "bloc": "southern"},
+}
+
+## 补给效率占位（星图落地前用三档顶替真实跳数图；星图做好后只需换这张表的来源，
+## WorldState.supply_efficiency() 的调用方不用改）。
+const STATION_REGION := "border"   # core(核心) / border(边境) / frontier(开拓地)
+const STATION_EFFICIENCY := {"core": 1.0, "border": 0.6, "frontier": 0.3}
+
+## 局部冲突节奏（2026-10-02 拍板：1 个月筹备 + 10 天开战 + 2 个月和平，循环往复）。
+## 天数单位 = Economy.day（1 day = ECON.day_length 秒）；debug_instant 不改这里的天数，
+## 只影响"天"本身的真实秒数（跟 Economy.dwell_total() 的加速口径一致）。
+const WORLD := {
+	"peace_days": 60,
+	"buildup_days": 30,
+	"war_days": 10,
+	"stockpile_target": 100.0,          # 概念上的"满值"；不设硬上限，允许冲破（更夸张的战争）
+	"background_fill_ratio": 0.7,       # 玩家什么都不做时，背景经济独自能填到的比例
+	"player_contrib_scale": 0.00006,    # 玩家反哺折算系数：按"货值 × 效率 × 这个系数"累加
+	"dealer_tiers": 3,                  # 采购代理同一货物挂几档买单（制造"订单墙"视觉密度）
+	"dealer_price_jitter": 0.06,        # 每档价格相对当前参考价的小幅抖动（±6%，低成本先实现）
+	"dealer_qty_base": 6000.0,          # 普通军需品(弹药/武器/修复剂)阶梯总量基数，远超单站日产能
+	"dealer_ship_qty_base": 2.0,        # 舰船类军需单档数量基数（整数级，不能照搬上面的量级）
+	"dealer_funds": 5000000.0,
+	"freighter_mult_peace": 1.0,
+	"freighter_mult_buildup_lo": 1.1,   # 筹备期刚开始
+	"freighter_mult_buildup_hi": 1.6,   # 筹备期快结束（临近 D-day，调度密度拉满）
+	"freighter_mult_war": 2.0,
+}
+
+
 # ================= 查询辅助 =================
 
 static func ore_ids() -> Array:
