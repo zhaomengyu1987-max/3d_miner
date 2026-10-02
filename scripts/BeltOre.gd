@@ -15,6 +15,8 @@ var mesh_instance: MeshInstance3D
 var age := 0.0                    # 存活计时(秒): BeltFlow 最长存活保险丝用
 # 捕获态: 被空间站引力光束拉拽
 var captured := false
+## 无人机拖曳标记: true 时玩家松开鼠标不会释放它(_release_all 豁免), 回收时复位
+var auto_towed := false
 var pull_target: Node3D
 var pull_speed := 14.0
 var _spin_saved := 0.0
@@ -24,6 +26,57 @@ var _spin_recover_total := 1.0
 var _sphere: SphereShape3D
 ## 下游偏置推力(m/s²): 碰撞/避让后帮矿恢复正向漂移, 防徘徊
 @export var drift_bias := 3.0
+
+const OUTLINE_SHADER := preload("res://shaders/outline_hull.gdshader")
+
+var _hover := false
+var _orig_mats := {}
+var _outline_mat: ShaderMaterial
+
+
+func _ready() -> void:
+	input_ray_pickable = true
+	mouse_entered.connect(_on_hover.bind(true))
+	mouse_exited.connect(_on_hover.bind(false))
+	_outline_mat = ShaderMaterial.new()
+	_outline_mat.shader = OUTLINE_SHADER
+
+
+## 悬停: 1px 级描边高亮 + 鼠标旁矿种提示(经 econ_ui 组转发给 EconUiRoot)
+func _on_hover(on: bool) -> void:
+	_hover = on
+	_apply_outline(on)
+	var ui := get_tree().get_first_node_in_group("econ_ui")
+	if ui != null:
+		if on:
+			ui.show_ore_tip(self)
+		else:
+			ui.hide_ore_tip(self)
+
+
+func _apply_outline(on: bool) -> void:
+	if mesh_instance == null or mesh_instance.mesh == null:
+		return
+	if on:
+		for s in mesh_instance.mesh.get_surface_count():
+			if _orig_mats.has(s):
+				continue
+			var orig: Material = mesh_instance.get_surface_override_material(s)
+			if orig == null:
+				orig = mesh_instance.mesh.surface_get_material(s)
+			if orig == null:
+				continue
+			var m: Material = orig.duplicate()
+			if m is BaseMaterial3D:
+				(m as BaseMaterial3D).next_pass = _outline_mat
+			else:
+				continue
+			_orig_mats[s] = orig
+			mesh_instance.set_surface_override_material(s, m)
+	else:
+		for s in _orig_mats:
+			mesh_instance.set_surface_override_material(s, _orig_mats[s])
+		_orig_mats.clear()
 
 
 func _init() -> void:
@@ -52,6 +105,7 @@ func setup(p_name: String, mesh: Mesh, p_tier: String, p_amount: int,
 	# 否则槽位累计超过 BeltFlow.max_ore_age_s 后, 每次重生都会在下一帧被
 	# 保险丝立刻回收 → 该槽位永久报废 → 池子耗尽、走廊断流。
 	age = 0.0
+	auto_towed = false
 	rotation = Vector3(randf() * TAU, randf() * TAU, randf() * TAU)
 	spin_axis = Vector3(randf() - 0.5, randf() - 0.5, randf() - 0.5)
 	if spin_axis.length_squared() < 0.001:
@@ -66,6 +120,11 @@ func setup(p_name: String, mesh: Mesh, p_tier: String, p_amount: int,
 	mesh_instance.mesh = mesh
 	mesh_instance.scale = Vector3.ONE * scale_f
 	name = "Ore_%s_%s" % [p_name, tier]
+
+
+## 护卫舰激光挖掘: 扣减储量(到 0 由调用方回收进池)
+func mine_units(u: int) -> void:
+	amount = maxi(amount - u, 0)
 
 
 func start_capture(target: Node3D, p_speed: float, spin: float) -> void:
@@ -101,6 +160,9 @@ func set_drifting(on: bool) -> void:
 		linear_velocity = velocity
 		angular_velocity = spin_axis * spin_speed
 	else:
+		if _hover:
+			_on_hover(false)  # 回收时若正被悬停, 清描边与提示
+		auto_towed = false
 		stop_capture()
 
 

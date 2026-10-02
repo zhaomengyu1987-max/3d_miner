@@ -45,6 +45,8 @@ uniform float head_radius = 45.0;      // 头部亮团半径 m
 uniform float head_ramp_pos = 0.85;    // 头部亮团在 ramp 上的取值位置
 uniform float core_ramp_pos = 0.97;    // 热核线在 ramp 上的取值位置
 uniform float output_gain = 1.6;       // 整体出射增益（加色+bloom 抬亮）
+// 强制束色通道(2026-09-30): a>0 时锁死色相/饱和(引力=蓝/采矿=金), 仅保留明暗结构, 不随 ramp/LUT 漂移
+uniform vec4 beam_force_color : source_color = vec4(0.0, 0.0, 0.0, 0.0);
 
 varying flat vec4 v_custom;
 varying vec4 v_color;
@@ -120,6 +122,13 @@ void fragment() {
 		vec3 core_col = texture(ramp_atlas, vec2(core_ramp_pos, row_v)).rgb;
 		vec3 head_col = texture(ramp_atlas, vec2(head_ramp_pos, row_v)).rgb;
 		col = ((aura + core_col * core) * env + head_col * head * radial) * flick;
+	}
+	// 强制束色: 保留逐像素明暗结构, 色相/饱和锁死
+	// 白热核心(2026-09-30 拍板): 亮度越高越向白偏移——白芯金身/蓝身, 整体纯度稍降
+	if (beam_force_color.a > 0.001) {
+		float lum = max(max(col.r, col.g), col.b);
+		float hot = clamp(lum * 1.25 - 0.25, 0.0, 0.85);
+		col = mix(beam_force_color.rgb * lum, vec3(lum), hot);
 	}
 	ALBEDO = col * alpha * output_gain;
 	EMISSION = col * alpha * output_gain;
