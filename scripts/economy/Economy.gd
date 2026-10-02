@@ -900,6 +900,13 @@ func research_block_reason(kind: String, equip: String) -> String:
 		return "需要研究站"
 	if research_jobs.size() >= research_slots():
 		return "研究槽已满"
+	# 同一目标不能并行研究（2026-10-02 用户报"能点多次但没有实际作用"）:
+	# 原先只查"槽位是否满", 研究站有 2 槽时同一个原图能排两条 —— 第二条完工只是把
+	# blueprints[equip] 再写一遍, 纯浪费槽位与时间（截图里正是两条重复的原图作业）。
+	# ME/TE 更糟: 并行完工会把等级推过上限。
+	for j in research_jobs:
+		if String(j["kind"]) == kind and String(j["equip"]) == equip:
+			return "该目标已在研究中"
 	match kind:
 		"blueprint":
 			if blueprints.has(equip):
@@ -941,15 +948,21 @@ func _finish_research(job: Dictionary) -> void:
 			blueprints[equip] = true
 			post_event("逆向完成！获得原图蓝图：%s（免许可费生产）" % GameData.equip_name(equip), "good")
 		"me":
-			me_levels[equip] = int(me_levels.get(equip, 0)) + 1
-			post_event("材料研究 ME +%d → %s（材料 -%d%%）" % [
-				me_levels[equip], GameData.equip_name(equip),
-				me_levels[equip] * int(GameData.RESEARCH["me_pct"] * 100)], "good")
+			var me_max := int(GameData.RESEARCH["me_max"])
+			var me_new: int = mini(int(me_levels.get(equip, 0)) + 1, me_max)   # 并行作业可能已推到上限
+			if me_new != int(me_levels.get(equip, 0)):
+				me_levels[equip] = me_new
+				post_event("材料研究 ME +%d → %s（材料 -%d%%）" % [
+					me_levels[equip], GameData.equip_name(equip),
+					me_levels[equip] * int(GameData.RESEARCH["me_pct"] * 100)], "good")
 		"te":
-			te_levels[equip] = int(te_levels.get(equip, 0)) + 1
-			post_event("建造研究 TE +%d → %s（工期 -%d%%）" % [
-				te_levels[equip], GameData.equip_name(equip),
-				te_levels[equip] * int(GameData.RESEARCH["te_pct"] * 100)], "good")
+			var te_max := int(GameData.RESEARCH["te_max"])
+			var te_new: int = mini(int(te_levels.get(equip, 0)) + 1, te_max)
+			if te_new != int(te_levels.get(equip, 0)):
+				te_levels[equip] = te_new
+				post_event("建造研究 TE +%d → %s（工期 -%d%%）" % [
+					te_levels[equip], GameData.equip_name(equip),
+					te_levels[equip] * int(GameData.RESEARCH["te_pct"] * 100)], "good")
 	research_changed.emit()
 
 

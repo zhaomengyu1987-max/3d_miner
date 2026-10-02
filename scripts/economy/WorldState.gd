@@ -196,6 +196,10 @@ func _ensure_dealer() -> void:
 	var f := Freighter.new()
 	f.is_dealer = true
 	f.is_smuggler = false
+	# def_id 必须给一个 StationModules.SHIP_LEN 认识的型号，否则 _spawn_ship() 里
+	# SHIP_LEN[f.def_id] 查不到会崩（2026-10-02 冒烟测试炸出来的 bug）。
+	# 发牌员是"大批采购船团"概念，视觉上给个 giant 船模比较贴切。
+	f.def_id = "giant"
 	f.name = "军需采购团·%s" % String(GameData.WORLD_FACTIONS[_current_faction]["name"])
 	f.cap = 1000000000.0   # 概念上是"off-screen 的大批采购船团"，不受单船舱位限制
 	f.funds = float(GameData.WORLD["dealer_funds"])
