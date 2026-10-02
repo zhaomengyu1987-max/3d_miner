@@ -203,14 +203,32 @@ const DEMAND := {
 }
 
 
-# ================= 世界系统 M1：局部冲突状态机（草案） =================
-# 设计与路线图见 docs/世界系统路线图.md。M1 范围：冻结多站扩张/自动化；
-# 10 小国 + 20 托拉斯只留数据骨架位置，不接入模拟——只有 empire/southern 这一条主线真正跑。
+# ================= 世界系统 M1+M2：局部冲突状态机 + 10 小国倒戈（草案） =================
+# 设计与路线图见 docs/世界系统路线图.md。只有 empire/southern 这一条主线真正在跑状态机；
+# 10 小国（M2 解冻）静态挂靠在其中一方 bloc 下、会倒戈，但不会自己单独开战线；
+# 20 托拉斯仍只留数据骨架位置，冻结到 M5；多站扩张/自动化冻结到 M4。
 
 ## 阵营数据骨架（先按两方落地；以后解冻小国/托拉斯时在这里扩表，调用方接口不用改）。
 const WORLD_FACTIONS := {
 	"empire": {"name": "帝国", "bloc": "empire"},
 	"southern": {"name": "南方联盟", "bloc": "southern"},
+}
+
+## M2：10 小国解冻——占位名(国1~国10)，正式名称待定后原地替换，key/调用方接口不变。
+## 这里的 "bloc" 只是【初始值】：运行时实际归属存在 WorldState._minor_bloc，
+## 会被倒戈事件改写并持久化（见 world_state_save.json 的 minor_bloc 字段）。
+## 初始 5:5 对半分配（2026-10-02 拍板），20 托拉斯本轮不动（M5 范围，仍保持中立/不接入）。
+const MINOR_FACTIONS := {
+	"minor1": {"name": "国1", "bloc": "empire"},
+	"minor2": {"name": "国2", "bloc": "empire"},
+	"minor3": {"name": "国3", "bloc": "empire"},
+	"minor4": {"name": "国4", "bloc": "empire"},
+	"minor5": {"name": "国5", "bloc": "empire"},
+	"minor6": {"name": "国6", "bloc": "southern"},
+	"minor7": {"name": "国7", "bloc": "southern"},
+	"minor8": {"name": "国8", "bloc": "southern"},
+	"minor9": {"name": "国9", "bloc": "southern"},
+	"minor10": {"name": "国10", "bloc": "southern"},
 }
 
 ## 补给效率占位（星图落地前用三档顶替真实跳数图；星图做好后只需换这张表的来源，
@@ -237,6 +255,11 @@ const WORLD := {
 	"freighter_mult_buildup_lo": 1.1,   # 筹备期刚开始
 	"freighter_mult_buildup_hi": 1.6,   # 筹备期快结束（临近 D-day，调度密度拉满）
 	"freighter_mult_war": 2.0,
+	# ---- M2：10 小国倒戈（2026-10-02 拍板）----
+	"minor_defect_chance": 0.12,        # 每次进入筹备期，10 小国各自独立判定是否倒戈
+	"minor_ally_mult_per_nation": 0.03, # 每多/少一个盟友（相对 5:5 基线）对补给效率/发牌员需求规模的影响
+	"minor_ally_mult_min": 0.7,         # 上面系数的安全夹限（当前 ±5 国 × 0.03 = ±15%，正常碰不到这个边界）
+	"minor_ally_mult_max": 1.3,
 }
 
 
