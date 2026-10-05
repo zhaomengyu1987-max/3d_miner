@@ -39,8 +39,8 @@ func _ready() -> void:
 	var gs := get_node_or_null("/root/GameSave")
 	if gs:
 		gs.register_section(SAVE_SECTION, Callable(self, "_get_state"), Callable(self, "_apply_state"))
-	# 启动补算必须等所有存档节回放完成(Economy._gs_register 是 deferred,
-	# 同帧 FIFO: 先注册后补算) → 延迟到本帧末, 离线奖励不会被旧钱包回放覆盖。
+	# 启动补算延迟到本帧末: 确保所有节注册/回放完成后再结算,
+	# 且 _refresh_pool 的 seed 取到最终墙钟值(避免注册顺序竞争)。
 	call_deferred("_startup_catch_up")
 	# M1 临时入口: F6 开关任务板(M2 挂 EconUiRoot 面板链)
 	_ui = load("res://scripts/ui/MissionBoardUi.gd").new()
@@ -225,22 +225,27 @@ func _persist_economy() -> void:
 
 
 func hire_captain(candidate_cid: String) -> Dictionary:
+	# 先拷贝目标再操作(不在 for-in 中 erase 原数组——脆弱模式)
+	var target: Dictionary = {}
 	for c in recruit_pool:
 		if c["cid"] == candidate_cid:
-			var fee := float(c["fee"])
-			if Economy.money < fee:
-				return {"ok": false, "why": "资金不足(押金 %d)" % int(fee)}
-			Economy.add_money(-fee)
-			_cap_seq += 1
-			var cid := "cap_%03d" % _cap_seq
-			captains[cid] = {"name": c["name"], "tier": c["tier"], "spec": c["spec"],
-				"level": 1, "exp": 0, "status": "idle"}
-			recruit_pool.erase(c)
-			get_node("/root/GameSave").touch()
-			_persist_economy()
-			captain_state_changed.emit(cid, "hired")
-			return {"ok": true, "cid": cid}
-	return {"ok": false, "why": "候选不存在"}
+			target = c
+			break
+	if target.is_empty():
+		return {"ok": false, "why": "候选不存在"}
+	var fee := float(target["fee"])
+	if Economy.money < fee:
+		return {"ok": false, "why": "资金不足(押金 %d)" % int(fee)}
+	Economy.add_money(-fee)
+	_cap_seq += 1
+	var cid := "cap_%03d" % _cap_seq
+	captains[cid] = {"name": target["name"], "tier": target["tier"], "spec": target["spec"],
+		"level": 1, "exp": 0, "status": "idle"}
+	recruit_pool.erase(target)
+	get_node("/root/GameSave").touch()
+	_persist_economy()
+	captain_state_changed.emit(cid, "hired")
+	return {"ok": true, "cid": cid}
 
 
 func dismiss_captain(cid: String) -> Dictionary:
@@ -322,6 +327,8 @@ func dispatch(team_id: String, task_id: String, seed_override: int = -1) -> Dict
 
 
 # ── 结算(成功/失败两档, M1) ──
+## 崩溃安全顺序(自查 P1): 先从 active 删除并同步落盘 save.json,
+## 再给奖励——崩溃时丢奖励(而非双给), 通胀方向安全。
 func _resolve(mid: String) -> void:
 	var mis: Dictionary = active[mid]
 	var def: Dictionary = MissionDefs.TASKS[mis["task_id"]]
@@ -337,27 +344,33 @@ func _resolve(mid: String) -> void:
 		"seed": int(mis["seed"]), "captain": cap.get("name", "?"),
 		"duration": float(mis["dur"]),
 	}
+	# ── 第一步: 任务出册 + 舰长状态 + 同步落盘(此点之后崩溃不会重复结算) ──
+	active.erase(mid)
+	if captains.has(cid):
+		captains[cid]["status"] = "idle"
+		captain_state_changed.emit(cid, "idle")
+	var gs := get_node_or_null("/root/GameSave")
+	if gs:
+		gs.save_now()
+	# ── 第二步: 发奖励(此点之后崩溃丢奖励, 不双给) ──
 	if success:
 		var ep := int(def["ep"])
 		var credits := float(def["credits"])
 		exploration["ep"] += ep
-		Economy.add_money(credits)
-		_persist_economy()
-		stats["done"] += 1
 		report["ep"] = ep
 		report["credits"] = credits
+		stats["done"] += 1
 		_give_captain_exp(cid, 30)
+		Economy.add_money(credits)
+		_persist_economy()
 	else:
-		stats["failed"] += 1
 		report["ep"] = 0
 		report["credits"] = 0
+		stats["failed"] += 1
 		_give_captain_exp(cid, 5)
-	if captains.has(cid):
-		captains[cid]["status"] = "idle"
-		captain_state_changed.emit(cid, "idle")
-	active.erase(mid)
 	_last_report = report
-	get_node("/root/GameSave").touch()
+	if gs:
+		gs.touch()
 	mission_completed.emit(report)
 
 

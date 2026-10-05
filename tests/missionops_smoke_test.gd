@@ -170,32 +170,34 @@ func _run_all() -> void:
 	_check("解雇自动解散其编队", mo.teams.size() == teams_before - 1 		and not mo.teams.has(tid))
 	_check("二队不受牵连", mo.teams.has(rt2.get("team_id", "team_002")))
 
-	# ⑯ 节损坏 → 挂起写入(审查 R3): active.dur 类型损坏 / exploration={} 均必须被拒
-	var r16: Dictionary = mo.dispatch(tid, "mo_survey_ice", 777)
-	if bool(r16.get("ok", false)):
+	# ⑯ 节损坏(放最后——reset 会销毁一切前置) → 挂起写入(自查 P2)
+	# 用二队派遣(一队已被⑮解雇销毁)
+	var rc: Dictionary = mo.dispatch(rt2.get("team_id", ""), "mo_survey_ice", 777)
+	_check("损坏测试前置: 二队派遣", bool(rc.get("ok", false)))
+	if bool(rc.get("ok", false)):
 		get_node("/root/GameSave").save_now()
-		var f16 := FileAccess.open("user://save.json", FileAccess.READ)
-		var j16: Variant = JSON.parse_string(f16.get_as_text())
-		f16.close()
-		var mid16: String = r16.get("mission_id", "")
-		(j16 as Dictionary)["sections"]["missionops"]["active"][mid16]["dur"] = {}
-		var fw := FileAccess.open("user://save.json", FileAccess.WRITE)
-		fw.store_string(JSON.stringify(j16))
-		fw.close()
+		var fc := FileAccess.open("user://save.json", FileAccess.READ)
+		var jc: Variant = JSON.parse_string(fc.get_as_text())
+		fc.close()
+		var midc: String = rc.get("mission_id", "")
+		(jc as Dictionary)["sections"]["missionops"]["active"][midc]["dur"] = {}
+		var fw2 := FileAccess.open("user://save.json", FileAccess.WRITE)
+		fw2.store_string(JSON.stringify(jc))
+		fw2.close()
 		mo.reset_state()
 		get_node("/root/GameSave").write_suspended = false
 		get_node("/root/GameSave")._load_or_init()
 		_check("损坏节: active.dur 类型损坏被拒", get_node("/root/GameSave").write_suspended)
 		get_node("/root/GameSave").write_suspended = false
 	mo.exploration = {}
-	get_node("/root/GameSave").save_now()               # 把坏节写进档(模拟损坏)
+	get_node("/root/GameSave").save_now()
 	get_node("/root/GameSave").write_suspended = false
-	mo.reset_state()                                    # 清内存, 模拟重启
-	get_node("/root/GameSave")._load_or_init()          # 读到坏节
-	_check("损坏节: 回放被拒且写入挂起", get_node("/root/GameSave").write_suspended)
-	get_node("/root/GameSave").write_suspended = false  # 恢复
 	mo.reset_state()
-	get_node("/root/GameSave").save_now()               # 收尾自清理: 落干净基线档
+	get_node("/root/GameSave")._load_or_init()
+	_check("损坏节: 回放被拒且写入挂起", get_node("/root/GameSave").write_suspended)
+	get_node("/root/GameSave").write_suspended = false
+	mo.reset_state()
+	get_node("/root/GameSave").save_now()
 
 	print("== 结果: %s (fails=%d) ==" % ["PASS" if _fails == 0 else "FAIL", _fails])
 	get_tree().quit(0 if _fails == 0 else 1)

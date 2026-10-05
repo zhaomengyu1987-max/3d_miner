@@ -23,7 +23,6 @@ var saved_at_wall: float = 0.0
 var write_suspended: bool = false
 
 var _sections: Dictionary = {}          # name -> { get: Callable, apply: Callable }
-var _accum: float = 0.0
 var _dirty: bool = false
 
 
@@ -63,7 +62,7 @@ func touch() -> void:
 	_dirty = true
 
 
-func _process(delta: float) -> void:
+func _process(_delta: float) -> void:
 	if _dirty and not write_suspended:
 		_dirty = false
 		save_now()
