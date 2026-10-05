@@ -384,9 +384,11 @@ func _find_succeeding_seed(task_id: String, cid: String) -> int:
 func _find_failing_seed(task_id: String, cid: String) -> int:
 	var def: Dictionary = MissionDefs.TASKS[task_id]
 	var p := MissionDefs.success_probability(def, MissionOps.captains.get(cid, {}))
-	for seed_v in range(1, 200):
+	# M2: 需要超过部分成功区(roll >= p + (1-p)*0.5)才算真失败
+	var partial_line: float = p + (1.0 - p) * 0.5
+	for seed_v in range(1, 500):
 		var rng := RandomNumberGenerator.new()
 		rng.seed = seed_v
-		if rng.randf() >= p:
+		if rng.randf() >= partial_line:
 			return seed_v
 	return -1
