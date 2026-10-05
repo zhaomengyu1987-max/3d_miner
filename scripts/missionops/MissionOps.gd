@@ -55,6 +55,9 @@ func _ready() -> void:
 	# M1 临时入口: F6 开关任务板(M2 挂 EconUiRoot 面板链)
 	_ui = load("res://scripts/ui/MissionBoardUi.gd").new()
 	add_child(_ui)
+	# M2: 战报弹窗(F7 查看 / 结算自动弹出)
+	var kr: Node = load("res://scripts/ui/KillReportUi.gd").new()
+	add_child(kr)
 
 
 # ── 时间 ──
@@ -438,10 +441,16 @@ func _resolve(mid: String) -> void:
 			captains[cid]["status"] = snap_status
 		push_warning("MissionOps: 结算落盘失败, 任务放回重试(mid=%s)" % mid)
 		return
+	# M2: 部分成功(§5.2: 失败但接近线 → ×0.6 奖励 + 舰长轻伤)
+	var partial := false
+	if not success:
+		partial = _is_partial(success, roll, p)
+		report["partial"] = partial
 	# 第二步: 发奖励; 经济存档失败 → 全量回滚, 任务放回重试(R5-P1)
-	if success:
-		var ep := int(def["ep"])
-		var credits := float(def["credits"])
+	if success or partial:
+		var mul := 1.0 if success else 0.6
+		var ep := int(float(def["ep"]) * mul)
+		var credits := float(def["credits"]) * mul
 		exploration["ep"] += ep
 		report["ep"] = ep
 		report["credits"] = credits
@@ -469,6 +478,7 @@ func _resolve(mid: String) -> void:
 		_give_captain_exp(cid, 5)
 	_last_report = report
 	_set_cooldown(mis["task_id"])   # M2: 常驻任务冷却(§5.8)
+	_maybe_discovery(def, int(mis["seed"]))   # M2: 发现物(§5.7)
 	if gs:
 		gs.touch()
 	mission_completed.emit(report)
@@ -821,6 +831,99 @@ func _victim_corp(def: Dictionary) -> String:
 		"salvage": return "深空打捞协会"
 		_: return "深空探索协会"
 
+
+# ═══════════════════════════════════════════════════
+# M2: T1 升级(§15.3 就地升级) + 碎片兑换(§5.7)
+# ═══════════════════════════════════════════════════
+
+## T1 就地升级: T1 件 + 远征材料 ×N + ₡ → T1+(§15.3, ≈1.25×)
+func upgrade_equipment(eq_id: String) -> Dictionary:
+	if not MissionDefs.EQUIPMENT.has(eq_id):
+		return {"ok": false, "why": "装备不存在"}
+	if int(inventory.get(eq_id, 0)) < 1:
+		return {"ok": false, "why": "库存无此装备"}
+	var eq: Dictionary = MissionDefs.EQUIPMENT[eq_id]
+	var mat_id: String = ""
+	for mid in MissionDefs.EXP_MATERIALS:
+		if MissionDefs.EXP_MATERIALS[mid]["slot"] == eq["slot"]:
+			mat_id = mid
+			break
+	var mat_need := 5   # [占位] T1+ 需要 5 个对应材料
+	if int(inventory.get(mat_id, 0)) < mat_need:
+		return {"ok": false, "why": "材料不足: %s %d/%d" % [
+			MissionDefs.EXP_MATERIALS[mat_id]["label"],
+			int(inventory.get(mat_id, 0)), mat_need]}
+	var cost: float = eq["price"] * 0.5   # 升级费 = 半价
+	if Economy.money < cost:
+		return {"ok": false, "why": "资金不足(₡%d)" % int(cost)}
+	# 执行
+	inventory[eq_id] = int(inventory[eq_id]) - 1
+	inventory[mat_id] = int(inventory[mat_id]) - mat_need
+	var up_id := eq_id + "_up"
+	inventory[up_id] = int(inventory.get(up_id, 0)) + 1
+	Economy.add_money(-cost)
+	var gs := get_node_or_null("/root/GameSave")
+	if gs:
+		gs.save_now()
+	_persist_economy()
+	return {"ok": true, "upgraded_to": up_id}
+
+
+## 碎片 → 逆向素材(§5.7: 凑满 N 片兑换)
+func exchange_fragments() -> Dictionary:
+	var frag_count := int(inventory.get("frag_generic", 0))
+	var need := 5   # [占位] 5 片换 1 份
+	if frag_count < need:
+		return {"ok": false, "why": "碎片不足(%d/%d)" % [frag_count, need]}
+	inventory["frag_generic"] = frag_count - need
+	inventory["reverse_material"] = int(inventory.get("reverse_material", 0)) + 1
+	var gs := get_node_or_null("/root/GameSave")
+	if gs:
+		gs.save_now()
+	return {"ok": true}
+
+
+## M2: 部分成功(§5.2 结算区间第三档)
+func _is_partial(success: bool, roll: float, p: float) -> bool:
+	if success:
+		return false
+	return roll < p + (1.0 - p) * 0.5   # 失败但接近成功线 → 部分成功
+
+
+# ═══════════════════════════════════════════════════
+# M2: 发现物图鉴(§5.7 简版)
+# ═══════════════════════════════════════════════════
+
+var discoveries: Array[Dictionary] = []
+
+func _maybe_discovery(def: Dictionary, seed_v: int) -> void:
+	# 勘测/信号类必得发现物; 其余 15% 概率
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_v + 2
+	var p: float = 1.0 if def["kind"] in ["survey", "signal"] else 0.15
+	if rng.randf() < p:
+		var disc := {
+			"kind": def["kind"],
+			"title": _gen_discovery_title(def, rng),
+			"found_at": _now(),
+			"task": def["name"],
+		}
+		discoveries.append(disc)
+
+
+func _gen_discovery_title(def: Dictionary, rng: RandomNumberGenerator) -> String:
+	var prefixes := ["远古", "废弃", "未知", "加密", "损坏的"]
+	var nouns := ["信标", "残骸", "数据核心", "星图", "通讯记录"]
+	return prefixes[rng.randi_range(0, prefixes.size()-1)] + nouns[rng.randi_range(0, nouns.size()-1)]
+
+
+func discovery_count() -> int:
+	return discoveries.size()
+
+
+# ═══════════════════════════════════════════════════
+# M2: 装备掉落概率(战斗类 30-60%)
+# ═══════════════════════════════════════════════════
 
 func _roll_loot(mid: String, mis: Dictionary, def: Dictionary) -> Dictionary:
 	var rng := RandomNumberGenerator.new()
