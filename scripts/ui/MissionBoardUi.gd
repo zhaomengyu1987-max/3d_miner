@@ -172,22 +172,40 @@ func _refresh() -> void:
 		_team_lab.text = "编队在途 · 剩余 %d:%02d" % [remain / 60, remain % 60]
 	else:
 		_team_lab.text = "编队: 无可用(先一键备战)"
-	for tid in MissionDefs.TASKS:
-		var def: Dictionary = MissionDefs.TASKS[tid]
+	# M2: 三层任务板(常驻/轮换) + 装备门槛 + 冷却显示
+	var tasks: Array[Dictionary] = MissionOps.get_board_tasks()
+	var current_layer := ""
+	for entry in tasks:
+		var def: Dictionary = entry["def"]
+		var layer: String = entry["layer"]
+		if layer != current_layer:
+			current_layer = layer
+			var header := _label("── %s ──" % ("常驻委托" if layer == "resident" else "轮换委托"), 11, DIM)
+			_list_box.add_child(header)
 		var row := HBoxContainer.new()
 		var info := VBoxContainer.new()
 		info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		var ok := idle != ""
-		info.add_child(_label("%s  [%s · %s · %d秒]"
-			% [def["name"], def["diff"], MissionDefs.SPEC_LABEL[def["spec"]], int(def["dur_sec"])],
-			13, TXT if ok else DIM))
-		info.add_child(_label("EP %d · ₡%d · %s" % [def["ep"], int(def["credits"]), def["desc"]],
-			11, DIM))
+		var ok: bool = idle != "" and not bool(entry["cooldown"])
+		var gap_txt := ""
+		if ok:
+			var gaps: Array[String] = MissionOps.check_equip_req(entry["id"], idle)
+			if not gaps.is_empty():
+				ok = false
+				gap_txt = " [装备不足: " + " · ".join(gaps) + "]"
+		var cd_txt := ""
+		if entry["cooldown"]:
+			var cd: int = int(entry["cd_remain"])
+			cd_txt = " [冷却 %d:%02d]" % [cd / 60, cd % 60]
+		var label_txt := "%s  [%s·%s·%d秒]%s%s" % [def["name"], def["diff"],
+			MissionDefs.SPEC_LABEL.get(def["spec"], ""), int(def["dur_sec"]), cd_txt, gap_txt]
+		info.add_child(_label(label_txt, 12, TXT if ok else DIM))
+		info.add_child(_label("EP%d · ₡%d · %s" % [def["ep"], int(def["credits"]), def["desc"]],
+			10, DIM))
 		row.add_child(info)
 		var btn := Button.new()
 		btn.text = "派遣"
 		btn.disabled = not ok
-		btn.pressed.connect(_dispatch.bind(tid))
+		btn.pressed.connect(_dispatch.bind(entry["id"]))
 		row.add_child(btn)
 		_list_box.add_child(row)
 
