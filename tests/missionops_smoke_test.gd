@@ -215,29 +215,31 @@ func _run_all() -> void:
 				mo.create_team("测试队", c)
 				break
 
-	# ⑰ 保存失败回滚: 雇佣(R4-P1)
+	# ⑰ 保存失败回滚: 雇佣(R4-P1)——前置必须满足, 否则报 FAIL
 	var gs := get_node("/root/GameSave")
+	_check("⑰前置: 池非空可测试", not mo.recruit_pool.is_empty())
 	var money_17: float = Economy.money
 	var caps_17: int = mo.captains.size()
-	var pool_17: int = mo.recruit_pool.size()
-	gs.write_suspended = true            # 模拟保存失败
-	if not mo.recruit_pool.is_empty():
-		var r17: Dictionary = mo.hire_captain(mo.recruit_pool[0]["cid"])
-		_check("保存失败: 雇佣被拒", not bool(r17.get("ok", false)))
-		_check("保存失败: 钱未扣", Economy.money == money_17)
-		_check("保存失败: 舰长表未变", mo.captains.size() == caps_17)
-		_check("保存失败: 池未变", mo.recruit_pool.size() == pool_17)
+	var pool_17_first: String = str(mo.recruit_pool[0]["cid"]) if not mo.recruit_pool.is_empty() else ""
+	gs.write_suspended = true
+	var r17: Dictionary = mo.hire_captain(mo.recruit_pool[0]["cid"]) if not mo.recruit_pool.is_empty() else {}
+	_check("保存失败: 雇佣被拒", not bool(r17.get("ok", false)))
+	_check("保存失败: 钱未扣", Economy.money == money_17)
+	_check("保存失败: 舰长表未变", mo.captains.size() == caps_17)
+	_check("保存失败: 池首位恢复原候选", not mo.recruit_pool.is_empty()
+		and str(mo.recruit_pool[0]["cid"]) == pool_17_first)
 	gs.write_suspended = false
 
-	# ⑱ 保存失败回滚: 解雇(R4-P1)
+	# ⑱ 保存失败回滚: 解雇(R4-P1)——前置必须满足
 	var caps_18: int = mo.captains.size()
 	var money_18: float = Economy.money
-	gs.write_suspended = true
 	var any_idle := ""
 	for c in mo.captains:
 		if mo.captains[c]["status"] == "idle":
 			any_idle = c
 			break
+	_check("⑱前置: 有 idle 舰长可测试", any_idle != "")
+	gs.write_suspended = true
 	if any_idle != "":
 		var r18: Dictionary = mo.dismiss_captain(any_idle)
 		_check("保存失败: 解雇被拒", not bool(r18.get("ok", false)))
@@ -246,15 +248,16 @@ func _run_all() -> void:
 	gs.write_suspended = false
 
 	# ⑲ 保存失败回滚: 结算(R4-P1)
-	# 派遣未来任务 → 挂起写入 → 到点结算 → 任务放回(不结算不奖励)
 	var done_19 := int(mo.stats["done"]) + int(mo.stats["failed"])
 	var tid19 := ""
 	for t in mo.teams:
 		if not mo._team_busy(t):
 			tid19 = t
 			break
+	_check("⑲前置: 有空闲编队", tid19 != "")
 	if tid19 != "":
 		var r19: Dictionary = mo.dispatch(tid19, "mo_survey_ice", 555)
+		_check("⑲前置: 派遣成功", bool(r19.get("ok", false)))
 		if bool(r19.get("ok", false)):
 			var mid19: String = r19.get("mission_id", "")
 			gs.write_suspended = true
@@ -264,11 +267,8 @@ func _run_all() -> void:
 			_check("保存失败: 无新结算计数",
 				int(mo.stats["done"]) + int(mo.stats["failed"]) == done_19)
 			gs.write_suspended = false
-			# 恢复后可正常结算
 			mo._catch_up(mo._now())
 			_check("恢复后: 任务正常结算", not mo.active.has(mid19))
-	else:
-		_check("保存失败结算: 跳过(无空闲编队)", true)
 
 	print("== 结果: %s (fails=%d) ==" % ["PASS" if _fails == 0 else "FAIL", _fails])
 	get_tree().quit(0 if _fails == 0 else 1)
