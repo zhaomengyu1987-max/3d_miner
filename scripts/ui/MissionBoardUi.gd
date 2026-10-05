@@ -92,25 +92,26 @@ func _build() -> void:
 
 
 func _one_click_prep() -> void:
-	if MissionOps.recruit_pool.is_empty():
-		MissionOps._refresh_pool()
-	if MissionOps.first_idle_team() == "":
+	# 顺序(审查 P2): 先复用在岗未编队舰长 → 再查容量 → 最后才考虑雇佣, 不先扣钱。
+	var cid := ""
+	for c in MissionOps.captains:
+		if MissionOps.captains[c]["status"] == "idle" and not _cap_in_team(c):
+			cid = c
+			break
+	if cid == "" and MissionOps.teams.size() >= MissionDefs.MAX_TEAMS:
+		_flash("行动舰队已满(%d 队)——先完成在途任务或扩容巢穴" % MissionDefs.MAX_TEAMS)
+		return
+	if cid == "":
 		if MissionOps.recruit_pool.is_empty():
-			_flash("招募池为空")
+			var wait := int(maxf(0.0, MissionOps.pool_refresh_at - Time.get_unix_time_from_system()))
+			_flash("招募池待刷新(%d 秒后)" % wait)
 			return
 		var cand: Dictionary = MissionOps.recruit_pool[0]
 		var r: Dictionary = MissionOps.hire_captain(cand["cid"])
 		if not r["ok"]:
 			_flash(r["why"])
 			return
-	var cid := ""
-	for c in MissionOps.captains:
-		if MissionOps.captains[c]["status"] == "idle" and not _cap_in_team(c):
-			cid = c
-			break
-	if cid == "":
-		_flash("无在岗舰长")
-		return
+		cid = r["cid"]
 	var r2: Dictionary = MissionOps.create_team("一队", cid)
 	if not r2["ok"]:
 		_flash(r2["why"])

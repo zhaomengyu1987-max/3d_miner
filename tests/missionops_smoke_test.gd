@@ -26,6 +26,9 @@ func _run_all() -> void:
 	print("== MissionOps M1 冒烟 ==")
 	var mo := MissionOps
 	mo.reset_state()                       # 测试确定性: 清掉上次运行残留
+	# 上轮 ⑯ 可能留下坏档+写入挂起 → 本轮先恢复可写并落一个干净基线档
+	get_node("/root/GameSave").write_suspended = false
+	get_node("/root/GameSave").save_now()
 	var now := Time.get_unix_time_from_system()
 	mo.now_override_sec = now
 
@@ -128,13 +131,48 @@ func _run_all() -> void:
 	var rbad: Dictionary = mo.dispatch(tid, "mo_not_exist")
 	_check("非法任务被拒", not bool(rbad.get("ok", false)))
 
-	# ⑬ 解雇联动: 自动解散其编队(不留悬空占位)
+	# ⑬ 容量顺序(审查 P2): 两队都在途时一键备战不得先扣押金
+	# 前置: 雇第二名舰长建二队, 双队派遣在途
+	var r2b: Dictionary = mo.hire_captain(mo.recruit_pool[0]["cid"])
+	_check("二队舰长雇佣", bool(r2b.get("ok", false)))
+	var cid2: String = r2b.get("cid", "")
+	var rt2: Dictionary = mo.create_team("二队", cid2)
+	_check("二队建队", bool(rt2.get("ok", false)))
+	var win2 := _find_succeeding_seed("mo_survey_ice", cid2)
+	var rd2: Dictionary = mo.dispatch(rt2.get("team_id", ""), "mo_survey_ice", win2)
+	_check("二队派遣", bool(rd2.get("ok", false)))
+	var money_snap2: float = Economy.money
+	var caps_before: int = mo.captains.size()
+	mo._ui._one_click_prep()
+	_check("备战顺序: 满编时不雇佣", Economy.money == money_snap2
+		and mo.captains.size() == caps_before)
+
+	# ⑭ 池雇空后计时刷新(审查 P2): 雇光候选, 时间推过刷新点 → 自动补员
+	for c in mo.recruit_pool.duplicate():
+		if float(c["fee"]) <= Economy.money:
+			mo.hire_captain(c["cid"])
+	_check("池已雇空", mo.recruit_pool.is_empty())
+	mo.now_override_sec = mo._now() + 1900.0            # 推过 30 分钟刷新点
+	await get_tree().process_frame
+	_check("雇空后计时刷新补员", mo.recruit_pool.size() == 3)
+
+	# ⑮ 解雇联动: 自动解散其编队(一队队长 idle, 二队在途不动)
 	var teams_before := mo.teams.size()
 	var rdis: Dictionary = mo.dismiss_captain(cid)
 	_check("解雇成功", bool(rdis.get("ok", false)))
-	_check("解雇自动解散其编队", mo.teams.size() == teams_before - 1 \
-		and not mo.teams.has(tid))
-	_check("编队无悬空引用", mo.first_idle_team() == "")
+	_check("解雇自动解散其编队", mo.teams.size() == teams_before - 1 		and not mo.teams.has(tid))
+	_check("二队不受牵连", mo.teams.has(rt2.get("team_id", "team_002")))
+
+	# ⑯ 节损坏 → 挂起写入(审查 P1): exploration={} 必须被拒
+	mo.exploration = {}
+	get_node("/root/GameSave").save_now()               # 把坏节写进档(模拟损坏)
+	get_node("/root/GameSave").write_suspended = false
+	mo.reset_state()                                    # 清内存, 模拟重启
+	get_node("/root/GameSave")._load_or_init()          # 读到坏节
+	_check("损坏节: 回放被拒且写入挂起", get_node("/root/GameSave").write_suspended)
+	get_node("/root/GameSave").write_suspended = false  # 恢复
+	mo.reset_state()
+	get_node("/root/GameSave").save_now()               # 收尾自清理: 落干净基线档
 
 	print("== 结果: %s (fails=%d) ==" % ["PASS" if _fails == 0 else "FAIL", _fails])
 	get_tree().quit(0 if _fails == 0 else 1)

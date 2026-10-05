@@ -39,10 +39,9 @@ func _ready() -> void:
 	var gs := get_node_or_null("/root/GameSave")
 	if gs:
 		gs.register_section(SAVE_SECTION, Callable(self, "_get_state"), Callable(self, "_apply_state"))
-	_catch_up(_now())
-	if recruit_pool.is_empty():
-		_refresh_pool()
-	board_refreshed.emit()
+	# 启动补算必须等所有存档节回放完成(Economy._gs_register 是 deferred,
+	# 同帧 FIFO: 先注册后补算) → 延迟到本帧末, 离线奖励不会被旧钱包回放覆盖。
+	call_deferred("_startup_catch_up")
 	# M1 临时入口: F6 开关任务板(M2 挂 EconUiRoot 面板链)
 	_ui = load("res://scripts/ui/MissionBoardUi.gd").new()
 	add_child(_ui)
@@ -68,25 +67,69 @@ func _get_state() -> Dictionary:
 func _apply_state(data: Variant) -> bool:
 	if typeof(data) != TYPE_DICTIONARY:
 		return false
-	# ── 结构校验: 任何字段类型不符 = 节损坏 → 拒绝回放(GameSave 挂起写入保护旧档) ──
 	var exploration_d: Variant = data.get("exploration", null)
 	var captains_d: Variant = data.get("captains", null)
 	var pool_a: Variant = data.get("recruit_pool", null)
 	var teams_d: Variant = data.get("teams", null)
 	var active_d: Variant = data.get("active", null)
 	var stats_d: Variant = data.get("stats", null)
+	# ── 外层容器 ──
 	if typeof(exploration_d) != TYPE_DICTIONARY or typeof(captains_d) != TYPE_DICTIONARY 			or typeof(pool_a) != TYPE_ARRAY or typeof(teams_d) != TYPE_DICTIONARY 			or typeof(active_d) != TYPE_DICTIONARY or typeof(stats_d) != TYPE_DICTIONARY:
-		push_warning("MissionOps: 存档节结构损坏, 拒绝回放")
+		push_warning("MissionOps: 存档节外层结构损坏")
 		return false
-	for cid in captains_d:
-		if typeof(captains_d[cid]) != TYPE_DICTIONARY or not (captains_d[cid] as Dictionary).has("status"):
-			push_warning("MissionOps: captains 条目损坏(%s)" % str(cid))
+	# ── 消费字段深度校验(只验实际读取的键; JSON 数字回放为 float, INT/FLOAT 同收) ──
+	if typeof(exploration_d.get("ep", null)) not in [TYPE_INT, TYPE_FLOAT]:
+		push_warning("MissionOps: exploration.ep 损坏")
+		return false
+	for k in ["done", "failed"]:
+		if typeof(stats_d.get(k, null)) not in [TYPE_INT, TYPE_FLOAT]:
+			push_warning("MissionOps: stats.%s 损坏" % k)
 			return false
-	for tid in active_d:
-		var m: Variant = active_d[tid]
-		if typeof(m) != TYPE_DICTIONARY or not (m as Dictionary).has_all(
-				["task_id", "team_id", "seed", "ends_wall"]):
-			push_warning("MissionOps: active 条目损坏(%s)" % str(tid))
+	for cid in captains_d:
+		var c: Variant = captains_d[cid]
+		if typeof(c) != TYPE_DICTIONARY:
+			return false
+		for k in ["name", "tier", "spec", "level", "exp", "status"]:
+			if not (c as Dictionary).has(k):
+				push_warning("MissionOps: captains[%s] 缺 %s" % [str(cid), k])
+				return false
+		if typeof(c["level"]) not in [TYPE_INT, TYPE_FLOAT] 				or typeof(c["exp"]) not in [TYPE_INT, TYPE_FLOAT]:
+			return false
+		if not MissionDefs.TIERS.has(c["tier"]) or not MissionDefs.SPECS.has(c["spec"]):
+			push_warning("MissionOps: captains[%s] tier/spec 非法" % str(cid))
+			return false
+		if not (c["status"] in ["idle", "on_mission", "resting"]):
+			return false
+	for e in pool_a:
+		if typeof(e) != TYPE_DICTIONARY or not (e as Dictionary).has_all(
+				["cid", "name", "tier", "spec", "fee"]):
+			push_warning("MissionOps: recruit_pool 条目损坏")
+			return false
+		if not MissionDefs.TIERS.has(e["tier"]):
+			return false
+	for tid in teams_d:
+		var tm: Variant = teams_d[tid]
+		if typeof(tm) != TYPE_DICTIONARY or not (tm as Dictionary).has_all(
+				["name", "captain_id"]):
+			return false
+		if not captains_d.has(tm["captain_id"]):
+			push_warning("MissionOps: 编队 %s 引用不存在舰长(悬空)" % str(tid))
+			return false
+	for mid in active_d:
+		var m: Variant = active_d[mid]
+		if typeof(m) != TYPE_DICTIONARY:
+			return false
+		if not (m as Dictionary).has_all(
+				["task_id", "team_id", "cid", "seed", "started_wall", "ends_wall", "dur"]):
+			push_warning("MissionOps: active[%s] 字段不全" % str(mid))
+			return false
+		if not MissionDefs.TASKS.has(m["task_id"]):
+			push_warning("MissionOps: active[%s] 任务不存在" % str(mid))
+			return false
+		if not captains_d.has(m["cid"]) or not teams_d.has(m["team_id"]):
+			push_warning("MissionOps: active[%s] 引用悬空" % str(mid))
+			return false
+		if typeof(m["ends_wall"]) not in [TYPE_INT, TYPE_FLOAT] 				or typeof(m["seed"]) not in [TYPE_INT, TYPE_FLOAT]:
 			return false
 	# ── 校验通过, 回放 ──
 	exploration = exploration_d
@@ -103,10 +146,18 @@ func _apply_state(data: Variant) -> bool:
 	return true
 
 
+## 启动补算(deferred): 所有节注册/回放完成后执行一次; 幂等。
+func _startup_catch_up() -> void:
+	_catch_up(_now())
+	if recruit_pool.is_empty():
+		_refresh_pool()
+	board_refreshed.emit()
+
+
 # ── 主循环: 到点结算 ──
 func _process(_delta: float) -> void:
 	var now := _now()
-	if not recruit_pool.is_empty() and now >= pool_refresh_at:
+	if now >= pool_refresh_at:
 		_refresh_pool()
 		board_refreshed.emit()
 	if active.is_empty():
