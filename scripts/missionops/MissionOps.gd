@@ -478,7 +478,13 @@ func _give_captain_exp(cid: String, amount: int) -> void:
 	if not captains.has(cid):
 		return
 	var cap: Dictionary = captains[cid]
-	cap["exp"] = int(cap["exp"]) + amount
+	# 老练技能加成
+	var exp_mul: float = 1.0
+	var skills: Dictionary = cap.get("skills", {})
+	if skills.has("veteran"):
+		var lv: int = int(skills["veteran"])
+		exp_mul = MissionDefs.SKILLS["veteran"]["lv%d" % lv].get("exp_mul", 1.0)
+	cap["exp"] = int(cap["exp"]) + int(amount * exp_mul)
 	var max_lv: int = MissionDefs.TIERS[cap["tier"]]["max_level"]
 	while cap["level"] < max_lv:
 		var need := int(100.0 * pow(float(cap["level"]), 1.5))
@@ -486,6 +492,58 @@ func _give_captain_exp(cid: String, amount: int) -> void:
 			break
 		cap["exp"] = int(cap["exp"]) - need
 		cap["level"] = int(cap["level"]) + 1
+		cap["points"] = int(cap.get("points", 0)) + 1   # 升级+1技能点
+
+
+## 学习技能(花 1 点; 条件: 有余点 + 槽位未满)
+func learn_skill(cid: String, skill_id: String) -> Dictionary:
+	if not captains.has(cid):
+		return {"ok": false, "why": "舰长不存在"}
+	if not MissionDefs.SKILLS.has(skill_id):
+		return {"ok": false, "why": "技能不存在"}
+	var cap: Dictionary = captains[cid]
+	if int(cap.get("points", 0)) < 1:
+		return {"ok": false, "why": "技能点不足"}
+	var skills: Dictionary = cap.get("skills", {})
+	if skills.has(skill_id):
+		return {"ok": false, "why": "已学过此技能"}
+	var max_slots: int = MissionDefs.TIERS[cap["tier"]]["skill_slots"]
+	if skills.size() >= max_slots:
+		return {"ok": false, "why": "技能槽已满(%d/%d)" % [skills.size(), max_slots]}
+	skills[skill_id] = 1
+	cap["skills"] = skills
+	cap["points"] = int(cap["points"]) - 1
+	var gs := get_node_or_null("/root/GameSave")
+	if gs:
+		gs.save_now()
+	return {"ok": true}
+
+
+## 升级技能到 2 级(花 1 点; 条件: 已学 lv1 + 精英槽未满)
+func upgrade_skill(cid: String, skill_id: String) -> Dictionary:
+	if not captains.has(cid):
+		return {"ok": false, "why": "舰长不存在"}
+	var cap: Dictionary = captains[cid]
+	var skills: Dictionary = cap.get("skills", {})
+	if not skills.has(skill_id) or int(skills[skill_id]) != 1:
+		return {"ok": false, "why": "此技能未学或已 2 级"}
+	if int(cap.get("points", 0)) < 1:
+		return {"ok": false, "why": "技能点不足"}
+	# 检查精英上限(2 级技能数 ≤ max_elite)
+	var elite_count := 0
+	for sid in skills:
+		if int(skills[sid]) == 2:
+			elite_count += 1
+	var max_elite: int = MissionDefs.TIERS[cap["tier"]]["max_elite"]
+	if elite_count >= max_elite:
+		return {"ok": false, "why": "精英技能已满(%d/%d)" % [elite_count, max_elite]}
+	skills[skill_id] = 2
+	cap["skills"] = skills
+	cap["points"] = int(cap["points"]) - 1
+	var gs := get_node_or_null("/root/GameSave")
+	if gs:
+		gs.save_now()
+	return {"ok": true}
 
 
 ## 测试/调试用: 清空全部运行态(不删存档文件; 存档回放发生在 _ready, 之后重置即测试基线)
