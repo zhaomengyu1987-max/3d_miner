@@ -89,12 +89,19 @@ func save_now() -> bool:
 		"saved_at_wall": saved_at_wall,
 		"sections": sections,
 	}
-	var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
+	# 原子写: 先写临时文件再改名(同卷 rename 近似原子), 避免写一半崩坏档
+	var tmp_path := SAVE_PATH + ".tmp"
+	var f := FileAccess.open(tmp_path, FileAccess.WRITE)
 	if f == null:
-		push_warning("GameSave: 无法打开 %s (err %d)" % [SAVE_PATH, FileAccess.get_open_error()])
+		push_warning("GameSave: 无法打开 %s (err %d)" % [tmp_path, FileAccess.get_open_error()])
 		return false
 	f.store_string(JSON.stringify(payload))
 	f.close()
+	var err := DirAccess.rename_absolute(tmp_path, SAVE_PATH)
+	if err != OK:
+		push_warning("GameSave: 改名失败(err %d), 保留旧档" % err)
+		DirAccess.remove_absolute(tmp_path)
+		return false
 	return true
 
 
