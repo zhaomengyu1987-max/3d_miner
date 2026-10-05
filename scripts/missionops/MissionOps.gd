@@ -179,6 +179,10 @@ func _apply_state(data: Variant) -> bool:
 	var disc_d: Variant = data.get("discoveries", null)
 	if typeof(disc_d) == TYPE_ARRAY:
 		discoveries = disc_d
+	# R6-P1: M1 旧档编队没有 ship_uids → 补默认空数组(前向兼容)
+	for tid in teams:
+		if not (teams[tid] as Dictionary).has("ship_uids"):
+			teams[tid]["ship_uids"] = []
 	return true
 
 
@@ -430,6 +434,15 @@ func dispatch(team_id: String, task_id: String, seed_override: int = -1) -> Dict
 	var gaps: Array[String] = check_equip_req(task_id, team_id)
 	if not gaps.is_empty():
 		return {"ok": false, "why": "装备不足: " + " · ".join(gaps)}
+	# R6-P2: 任务板限制(状态机层, 不依赖 UI 灰显)
+	var now_wall := _now()
+	if task_id in MissionDefs.RESIDENT_TASKS:
+		var cd_until: float = float(board["resident_cd"].get(task_id, 0.0))
+		if now_wall < cd_until:
+			var remain: int = int(cd_until - now_wall)
+			return {"ok": false, "why": "冷却中(剩余 %d:%02d)" % [remain / 60, remain % 60]}
+	elif not (task_id in board.get("rotation", [])):
+		return {"ok": false, "why": "此任务不在当前任务板上"}
 	var def: Dictionary = MissionDefs.TASKS[task_id]
 	# 同步落盘+回滚(自查 P2: 崩溃丢派遣而非幽灵在途)
 	var snap_seq := _mis_seq
@@ -551,6 +564,7 @@ func _give_captain_exp(cid: String, amount: int) -> void:
 
 
 ## 学习技能(花 1 点; 条件: 有余点 + 槽位未满)
+## ⚠ 技能效果当前为 placeholder(2026-10-05 船长拍板): 仅入表+扣点, dur_mul/credits_mul 等不接入计算
 func learn_skill(cid: String, skill_id: String) -> Dictionary:
 	if not captains.has(cid):
 		return {"ok": false, "why": "舰长不存在"}
@@ -664,6 +678,11 @@ func decommission_ship(uid: String) -> Dictionary:
 		return {"ok": false, "why": "舰船不存在"}
 	if is_ship_on_mission(uid):
 		return {"ok": false, "why": "在途舰船不可退役"}
+	# 完整快照(R6-P1: 保存失败全量回滚, 不复制舰船)
+	var ship_snapshot: Dictionary = (fleet[uid] as Dictionary).duplicate()
+	var teams_snapshot: Dictionary = {}
+	var snap_inv := inventory.duplicate()
+	var snap_econ_inv := Economy.inv.duplicate()
 	var ship: Dictionary = fleet[uid]
 	# 自动卸装
 	for slot in ship["fitted"]:
@@ -673,14 +692,29 @@ func decommission_ship(uid: String) -> Dictionary:
 	# 从编队移除
 	for tid in teams:
 		if teams[tid].get("ship_uids", []).has(uid):
+			teams_snapshot[tid] = (teams[tid] as Dictionary).duplicate()
 			teams[tid]["ship_uids"].erase(uid)
 	var def_id: String = ship["def_id"]
 	fleet.erase(uid)
 	Economy.inv[def_id] = int(Economy.inv.get(def_id, 0)) + 1
 	var gs := get_node_or_null("/root/GameSave")
-	if gs:
-		gs.save_now()
-	_persist_economy()
+	if gs and not gs.save_now():
+		# missionops 落盘失败 → 回滚(不复制)
+		fleet[uid] = ship_snapshot
+		inventory = snap_inv
+		Economy.inv = snap_econ_inv
+		for tid in teams_snapshot:
+			teams[tid] = teams_snapshot[tid]
+		return {"ok": false, "why": "任务档写入失败, 退役已取消"}
+	if not _persist_economy():
+		fleet[uid] = ship_snapshot
+		inventory = snap_inv
+		Economy.inv = snap_econ_inv
+		for tid in teams_snapshot:
+			teams[tid] = teams_snapshot[tid]
+		if gs:
+			gs.save_now()
+		return {"ok": false, "why": "经济档写入失败, 退役已取消(防复制)"}
 	return {"ok": true}
 
 
@@ -706,13 +740,14 @@ func is_ship_on_mission(ship_uid: String) -> bool:
 func install_equipment(ship_uid: String, eq_id: String) -> Dictionary:
 	if not fleet.has(ship_uid):
 		return {"ok": false, "why": "舰船不存在"}
-	if not MissionDefs.EQUIPMENT.has(eq_id):
+	if not MissionDefs.EQUIPMENT.has(eq_id) and not MissionDefs.EQUIPMENT.has(eq_id.replace("_up", "")):
 		return {"ok": false, "why": "装备不存在"}
 	if is_ship_on_mission(ship_uid):
 		return {"ok": false, "why": "在途舰船不可换装"}
 	if int(inventory.get(eq_id, 0)) < 1:
 		return {"ok": false, "why": "库存无此装备"}
-	var eq: Dictionary = MissionDefs.EQUIPMENT[eq_id]
+	var base_id := eq_id.replace("_up", "")   # R6-P2: T1+ 用基础定义
+	var eq: Dictionary = MissionDefs.EQUIPMENT[base_id]
 	var slot: String = eq["slot"]
 	var ship: Dictionary = fleet[ship_uid]
 	# 快照(回滚用)

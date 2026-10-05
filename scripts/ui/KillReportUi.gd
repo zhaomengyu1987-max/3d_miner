@@ -119,7 +119,9 @@ func _show_report(r: Dictionary) -> void:
 	# 头栏 + meta
 	var task: String = str(r.get("task", "?"))
 	var success: bool = bool(r.get("success", false))
-	_title.text = ("☠ %s · %s" % [task, "成功" if success else "失败"])
+	var partial: bool = bool(r.get("partial", false))
+	var result_label: String = "成功" if success else ("部分成功" if partial else "失败")
+	_title.text = ("☠ %s · %s" % [task, result_label])
 	_meta.text = "seed #%d · %.0f秒" % [int(r.get("seed", 0)), float(r.get("duration", 0))]
 
 	# 受害者
@@ -155,8 +157,9 @@ func _show_report(r: Dictionary) -> void:
 		if total_credits > 0:
 			_loot_box.add_child(_loot_label("信用点 ₡%d" % int(total_credits), GOOD))
 	# 总计
-	if success:
-		_total.text = "总收益: EP+%d · ₡%d" % [int(r.get("ep", 0)), int(total_credits)]
+	if success or partial:
+		_total.text = "总收益: EP+%d · ₡%d%s" % [int(r.get("ep", 0)), int(total_credits),
+			" (部分×0.6)" if partial else ""]
 	else:
 		_total.text = "任务失败 · 无奖励"
 

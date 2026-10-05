@@ -150,8 +150,12 @@ func _flash(msg: String) -> void:
 
 func _on_mission_done(report: Dictionary) -> void:
 	_refresh()
+	var partial: bool = bool(report.get("partial", false))
 	if report.get("success", false):
 		_report_lab.text = ("[color=#73e68d]◆ %s · 成功[/color]  +EP%d  +₡%d  (seed #%d)\n[color=#5a6a80]详情结算弹窗 M2 接入[/color]"
+			% [report["task"], report["ep"], int(report["credits"]), report["seed"]])
+	elif partial:
+		_report_lab.text = ("[color=#e0b34c]◆ %s · 部分成功(×0.6)[/color]  +EP%d  +₡%d  (seed #%d)"
 			% [report["task"], report["ep"], int(report["credits"]), report["seed"]])
 	else:
 		_report_lab.text = ("[color=#f39058]◆ %s · 失败[/color]  无奖励 (seed #%d)"
