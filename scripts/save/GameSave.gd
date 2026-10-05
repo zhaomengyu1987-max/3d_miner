@@ -2,7 +2,8 @@ extends Node
 
 ## 极简存档节注册器（蓝图 §6.3 前置公共件, 2026-10-04 M1）。
 ##
-## 各系统通过 register_section() 注册自己的"取状态/回放状态"回调,
+## 各系统通过 register_section() 注册自己的"取状态/回放状态"回调;
+## apply_cb(data) 必须返回 bool: false = 节数据损坏 → GameSave 挂起写入保护旧档(§6.3 P1 修复)。
 ## 本件统一负责: JSON 落盘(user://save.json) / 启动读档 / 60s 心跳自动存 /
 ## touch() 关键操作后追加存 / 读档失败保护(不覆盖旧档)。
 ##
@@ -46,9 +47,11 @@ func register_section(section_name: String, get_cb: Callable, apply_cb: Callable
 	# 注册晚于读档(典型: autoload 顺序在读档之后) → 把已读到的数据立即回放给它
 	if _pending.has(section_name):
 		var data: Variant = _pending[section_name]
+		if apply_cb.is_valid() and not apply_cb.call(data):
+			write_suspended = true
+			push_warning("GameSave: 节 %s 回放失败, 写入挂起(保护旧档)" % section_name)
+			return
 		_pending.erase(section_name)
-		if apply_cb.is_valid():
-			apply_cb.call(data)
 
 
 ## 读档时如果节尚未注册, 数据先挂在这里等注册时回放
@@ -127,6 +130,8 @@ func _load_or_init() -> void:
 		if _pending.has(sec_name):
 			var apply_cb: Callable = _sections[sec_name]["apply"]
 			var payload: Variant = _pending[sec_name]
+			if apply_cb.is_valid() and not apply_cb.call(payload):
+				write_suspended = true
+				push_warning("GameSave: 节 %s 回放失败, 写入挂起(保护旧档)" % sec_name)
+				return
 			_pending.erase(sec_name)
-			if apply_cb.is_valid():
-				apply_cb.call(payload)

@@ -1,12 +1,12 @@
 extends Node
 
-## MissionOps M1 冒烟测试(蓝图 §13.5 子集)。
+## MissionOps M1 冒烟测试(蓝图 §13.5 + 审查修复验证)。
 ## 运行: godot --headless --path . res://tests/missionops_smoke_test.tscn
 ## 全过 → quit(0); 任一失败 → quit(1)。
 ## 时间旅行: 通过 MissionOps.now_override_sec 注入, 不 sleep。
+## 注: 测试开头 reset_state() 保证确定性; user://save.json 跨运行持久。
 
 var _fails: int = 0
-var _reports: Array = []
 
 
 func _ready() -> void:
@@ -50,8 +50,10 @@ func _run_all() -> void:
 	var rdup: Dictionary = mo.create_team("二队", cid)
 	_check("同舰长不可带两队", not bool(rdup.get("ok", false)))
 
-	# ⑤ 派遣 + 编队互斥
-	var rd: Dictionary = mo.dispatch(tid, "mo_survey_ice")
+	# ⑤ 派遣 + 编队互斥(seed 选定必胜, 保证 ⑦ 走成功路径)
+	var win_seed := _find_succeeding_seed("mo_survey_ice", cid)
+	_check("找到必胜 seed", win_seed >= 0)
+	var rd: Dictionary = mo.dispatch(tid, "mo_survey_ice", win_seed)
 	_check("派遣成功", bool(rd.get("ok", false)))
 	var mid: String = rd.get("mission_id", "")
 	_check("任务入途", mo.active.has(mid))
@@ -59,8 +61,8 @@ func _run_all() -> void:
 	_check("在途编队不可再派", not bool(rbusy.get("ok", false)))
 
 	# ⑥ 种子复现: 同 seed 同结果(直接比较概率掷骰)
-	var roll_a: bool = _roll_with(mo.active[mid]["seed"], mid)
-	var roll_b: bool = _roll_with(mo.active[mid]["seed"], mid)
+	var roll_a: bool = _roll_with(mo.active[mid]["seed"])
+	var roll_b: bool = _roll_with(mo.active[mid]["seed"])
 	_check("种子可复现(同 seed 同结果)", roll_a == roll_b)
 
 	# ⑦ 时间旅行到点 → 结算成功路径
@@ -91,39 +93,71 @@ func _run_all() -> void:
 		_check("失败结算: 无 ₡ 收益", Economy.money <= m2 + 0.001)
 		_check("stats.failed = 1", int(mo.stats["failed"]) == 1)
 
-	# ⑩ 存档 round-trip: save_now 后文件含 missionops 节
+	# ⑩ 真 round-trip: 落盘 → 污染内存 → 从文件重载 → 逐字段还原
 	get_node("/root/GameSave").save_now()
-	var f := FileAccess.open("user://save.json", FileAccess.READ)
-	var ok_file := f != null
-	var payload: Variant = null
-	if ok_file:
-		payload = JSON.parse_string(f.get_as_text())
-		f.close()
-	_check("存档落盘且 JSON 可解析", ok_file and typeof(payload) == TYPE_DICTIONARY)
-	_check("存档含 missionops 节", typeof(payload) == TYPE_DICTIONARY \
-		and (payload as Dictionary).get("sections", {}).has("missionops"))
-	_check("存档含 saved_at_wall", typeof(payload) == TYPE_DICTIONARY \
-		and float((payload as Dictionary).get("saved_at_wall", 0)) > 0)
+	var ep_snap := mo.ep()
+	var caps_snap: int = mo.captains.size()
+	var teams_snap: int = mo.teams.size()
+	var money_snap: float = Economy.money
+	mo.exploration["ep"] = ep_snap + 77                       # 内存污染
+	mo.captains["cap_fake"] = {"name": "幽灵", "tier": "normal", "spec": "combat",
+		"level": 1, "exp": 0, "status": "idle"}
+	get_node("/root/GameSave")._load_or_init()                # 从文件回放
+	_check("round-trip: EP 还原", mo.ep() == ep_snap)
+	_check("round-trip: 舰长表还原(幽灵被清除)", \
+		not mo.captains.has("cap_fake") and mo.captains.size() == caps_snap)
+	_check("round-trip: 编队数还原", mo.teams.size() == teams_snap)
+	_check("round-trip: 钱包还原", absf(Economy.money - money_snap) < 0.001)
 
-	# ⑪ 派遣到不存在任务被拒
+	# ⑪ 重启补算: 派遣未来任务 → 模拟进程死亡(清内存) → 文件回放 → catch_up → 幂等
+	var done0 := int(mo.stats["done"])
+	var rre: Dictionary = mo.dispatch(tid, "mo_survey_ice", 424242)
+	_check("重启测试: 派遣成功", bool(rre.get("ok", false)))
+	var mid2: String = rre.get("mission_id", "")
+	get_node("/root/GameSave").save_now()                     # 模拟重启前的自动存档心跳
+	mo.active = {}                                            # 进程死亡(内存丢失)
+	get_node("/root/GameSave")._load_or_init()                # 文件回放
+	_check("重启回放: 在途任务还原", mo.active.has(mid2))
+	mo.now_override_sec = float(mo.active[mid2]["ends_wall"]) + 1.0
+	mo._catch_up(mo._now())
+	_check("重启补算: 到点结算", not mo.active.has(mid2) and int(mo.stats["done"]) == done0 + 1)
+	mo._catch_up(mo._now())
+	_check("重启补算幂等(不双发)", int(mo.stats["done"]) == done0 + 1)
+
+	# ⑫ 派遣到不存在任务被拒
 	var rbad: Dictionary = mo.dispatch(tid, "mo_not_exist")
 	_check("非法任务被拒", not bool(rbad.get("ok", false)))
+
+	# ⑬ 解雇联动: 自动解散其编队(不留悬空占位)
+	var teams_before := mo.teams.size()
+	var rdis: Dictionary = mo.dismiss_captain(cid)
+	_check("解雇成功", bool(rdis.get("ok", false)))
+	_check("解雇自动解散其编队", mo.teams.size() == teams_before - 1 \
+		and not mo.teams.has(tid))
+	_check("编队无悬空引用", mo.first_idle_team() == "")
 
 	print("== 结果: %s (fails=%d) ==" % ["PASS" if _fails == 0 else "FAIL", _fails])
 	get_tree().quit(0 if _fails == 0 else 1)
 
 
-func _roll_with(seed_v: int, _mid: String) -> bool:
+func _roll_with(seed_v: int) -> bool:
 	# 与 MissionOps._resolve 相同的掷骰: 重放 seed 的第一个 randf 与任务成功率比较
 	var def: Dictionary = MissionDefs.TASKS["mo_survey_ice"]
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_v
 	var roll := rng.randf()
-	return roll < MissionDefs.success_probability(def, MissionOps.captains.get(_active_cid(), {}))
+	return roll < MissionDefs.success_probability(def, {})
 
 
-func _active_cid() -> String:
-	return ""
+func _find_succeeding_seed(task_id: String, cid: String) -> int:
+	var def: Dictionary = MissionDefs.TASKS[task_id]
+	var p := MissionDefs.success_probability(def, MissionOps.captains.get(cid, {}))
+	for seed_v in range(1, 500):
+		var rng := RandomNumberGenerator.new()
+		rng.seed = seed_v
+		if rng.randf() < p:
+			return seed_v
+	return -1
 
 
 func _find_failing_seed(task_id: String, cid: String) -> int:
