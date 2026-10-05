@@ -76,6 +76,7 @@ func _get_state() -> Dictionary:
 		"cap_seq": _cap_seq, "team_seq": _team_seq, "mis_seq": _mis_seq,
 		"fleet": fleet, "ship_name_counter": ship_name_counter,
 		"inventory": inventory, "board": board,
+		"discoveries": discoveries,
 	}
 
 
@@ -175,6 +176,9 @@ func _apply_state(data: Variant) -> bool:
 	var board_d: Variant = data.get("board", null)
 	if typeof(board_d) == TYPE_DICTIONARY:
 		board = board_d
+	var disc_d: Variant = data.get("discoveries", null)
+	if typeof(disc_d) == TYPE_ARRAY:
+		discoveries = disc_d
 	return true
 
 
@@ -268,7 +272,7 @@ func hire_captain(candidate_cid: String) -> Dictionary:
 	_cap_seq += 1
 	var cid := "cap_%03d" % _cap_seq
 	captains[cid] = {"name": target["name"], "tier": target["tier"], "spec": target["spec"],
-		"level": 1, "exp": 0, "status": "idle"}
+		"level": 1, "exp": 0, "status": "idle", "skills": {}, "points": 0}
 	recruit_pool.remove_at(target_idx)
 	var gs := get_node_or_null("/root/GameSave")
 	if gs and not gs.save_now():
@@ -349,7 +353,7 @@ func create_team(team_name: String, cid: String) -> Dictionary:
 	var snap_seq := _team_seq
 	_team_seq += 1
 	var tid := "team_%03d" % _team_seq
-	teams[tid] = {"name": team_name, "captain_id": cid}
+	teams[tid] = {"name": team_name, "captain_id": cid, "ship_uids": []}
 	var gs := get_node_or_null("/root/GameSave")
 	if gs and not gs.save_now():
 		teams.erase(tid)
@@ -371,6 +375,44 @@ func _team_busy(tid: String) -> bool:
 		if active[mid]["team_id"] == tid:
 			return true
 	return false
+
+
+## M2: 舰船加入编队(装备门槛的前提——门槛统计基于编队内舰船)
+func add_ship_to_team(tid: String, ship_uid: String) -> Dictionary:
+	if not teams.has(tid):
+		return {"ok": false, "why": "编队不存在"}
+	if not fleet.has(ship_uid):
+		return {"ok": false, "why": "舰船不存在"}
+	if is_ship_on_mission(ship_uid):
+		return {"ok": false, "why": "在途舰船不可编队"}
+	# 检查是否已在其他编队
+	for other_tid in teams:
+		if teams[other_tid].get("ship_uids", []).has(ship_uid):
+			return {"ok": false, "why": "该舰船已在编队 %s" % teams[other_tid]["name"]}
+	var max_slots: int = MissionDefs.MAX_SLOTS
+	if teams[tid]["ship_uids"].size() >= max_slots:
+		return {"ok": false, "why": "船位已满(%d/%d)" % [teams[tid]["ship_uids"].size(), max_slots]}
+	teams[tid]["ship_uids"].append(ship_uid)
+	var gs := get_node_or_null("/root/GameSave")
+	if gs:
+		gs.save_now()
+	return {"ok": true}
+
+
+## M2: 舰船移出编队
+func remove_ship_from_team(tid: String, ship_uid: String) -> Dictionary:
+	if not teams.has(tid):
+		return {"ok": false, "why": "编队不存在"}
+	var uids: Array = teams[tid].get("ship_uids", [])
+	if not uids.has(ship_uid):
+		return {"ok": false, "why": "该舰船不在此编队"}
+	if _team_busy(tid):
+		return {"ok": false, "why": "编队在途不可调整"}
+	uids.erase(ship_uid)
+	var gs := get_node_or_null("/root/GameSave")
+	if gs:
+		gs.save_now()
+	return {"ok": true}
 
 
 # ── 派遣 ──
@@ -430,6 +472,7 @@ func _resolve(mid: String) -> void:
 	var snap_ep := int(exploration["ep"])
 	var snap_status: String = captains[cid]["status"] if captains.has(cid) else ""
 	var snap_cap: Dictionary = captains[cid].duplicate() if captains.has(cid) else {}
+	var snap_inv: Dictionary = inventory.duplicate()  # P1-1: inventory 快照(战利品回滚)
 	active.erase(mid)
 	if captains.has(cid):
 		captains[cid]["status"] = "idle"
@@ -446,7 +489,7 @@ func _resolve(mid: String) -> void:
 	if not success:
 		partial = _is_partial(success, roll, p)
 		report["partial"] = partial
-	# 第二步: 发奖励; 经济存档失败 → 全量回滚, 任务放回重试(R5-P1)
+	# 第二步: 发奖励+战利品入仓; 经济存档失败 → 全量回滚(含 inventory, P1-1)
 	if success or partial:
 		var mul := 1.0 if success else 0.6
 		var ep := int(float(def["ep"]) * mul)
@@ -457,18 +500,20 @@ func _resolve(mid: String) -> void:
 		stats["done"] += 1
 		_give_captain_exp(cid, 30)
 		Economy.add_money(credits)
+		_apply_loot(report.get("loot", {}))   # P1-1: 战利品在事务内应用(非 _build 时)
 		if not _persist_economy():
 			Economy.add_money(-credits)
 			exploration["ep"] = snap_ep
 			stats["done"] = snap_done
 			stats["failed"] = snap_failed
+			inventory = snap_inv                    # P1-1: inventory 回滚
 			active[mid] = mis
 			if captains.has(cid):
-				captains[cid] = snap_cap            # 恢复完整舰长(含exp/level, 自查P2)
+				captains[cid] = snap_cap
 				captains[cid]["status"] = snap_status
 			if gs:
 				gs.save_now()
-			_last_report = {}                       # 清残留报告(P3)
+			_last_report = {}
 			push_warning("MissionOps: 经济存档失败, 结算已回滚(mid=%s)" % mid)
 			return
 	else:
@@ -573,6 +618,7 @@ func reset_state() -> void:
 	ship_name_counter = 0
 	inventory = {}
 	board = {"resident_cd": {}, "rotation": [], "rotation_at": 0.0, "rotation_seed": 0}
+	discoveries = []
 	_refresh_pool()
 	_refresh_rotation()
 
@@ -669,17 +715,21 @@ func install_equipment(ship_uid: String, eq_id: String) -> Dictionary:
 	var eq: Dictionary = MissionDefs.EQUIPMENT[eq_id]
 	var slot: String = eq["slot"]
 	var ship: Dictionary = fleet[ship_uid]
+	# 快照(回滚用)
+	var snap_old: String = ship["fitted"][slot]
+	var snap_inv := inventory.duplicate()
 	# 卸下旧装备回仓
-	var old: String = ship["fitted"][slot]
-	if old != "":
-		inventory[old] = int(inventory.get(old, 0)) + 1
+	if snap_old != "":
+		inventory[snap_old] = int(inventory.get(snap_old, 0)) + 1
 	# 安装新的
 	inventory[eq_id] = int(inventory.get(eq_id, 0)) - 1
 	ship["fitted"][slot] = eq_id
 	var gs := get_node_or_null("/root/GameSave")
-	if gs:
-		gs.save_now()
-	return {"ok": true, "replaced": old}
+	if gs and not gs.save_now():
+		ship["fitted"][slot] = snap_old
+		inventory = snap_inv
+		return {"ok": false, "why": "存档写入失败, 装备已还原"}
+	return {"ok": true, "replaced": snap_old}
 
 
 ## 卸下装备
@@ -692,11 +742,14 @@ func remove_equipment(ship_uid: String, slot: String) -> Dictionary:
 	var eq_id: String = ship["fitted"].get(slot, "")
 	if eq_id == "":
 		return {"ok": false, "why": "该槽位为空"}
+	var snap_inv := inventory.duplicate()
 	inventory[eq_id] = int(inventory.get(eq_id, 0)) + 1
 	ship["fitted"][slot] = ""
 	var gs := get_node_or_null("/root/GameSave")
-	if gs:
-		gs.save_now()
+	if gs and not gs.save_now():
+		ship["fitted"][slot] = eq_id
+		inventory = snap_inv
+		return {"ok": false, "why": "存档写入失败, 卸下已还原"}
 	return {"ok": true, "eq_id": eq_id}
 
 
@@ -799,9 +852,9 @@ func _build_killreport(mid: String, mis: Dictionary, def: Dictionary,
 		members.append({"name": "僚机 %d" % (i + 1), "role": "队员",
 			"ship": "护卫", "damage": 0, "final_blow": false})
 	report["members"] = members
-	# 受害者(按任务类型)
-	report["victim"] = {"name": _victim_name(def), "ship": _victim_ship(def),
-		"corporation": _victim_corp(def)}
+	# 受害者(按任务类型; P1-3: 用 mission seed 派生, 可复现)
+	report["victim"] = {"name": _victim_name(def, int(mis["seed"])),
+		"ship": _victim_ship(def), "corporation": _victim_corp(def)}
 	# 掉落清单
 	if success:
 		report["loot"] = _roll_loot(mid, mis, def)
@@ -810,9 +863,9 @@ func _build_killreport(mid: String, mis: Dictionary, def: Dictionary,
 	return report
 
 
-func _victim_name(def: Dictionary) -> String:
+func _victim_name(def: Dictionary, seed_v: int) -> String:
 	var rng := RandomNumberGenerator.new()
-	rng.seed = int(_now()) ^ hash(def["name"])
+	rng.seed = seed_v ^ hash(def["name"])   # P1-3: mission seed 派生(可复现)
 	return MissionDefs.NICKS[rng.randi_range(0, MissionDefs.NICKS.size() - 1)]
 
 
@@ -856,16 +909,25 @@ func upgrade_equipment(eq_id: String) -> Dictionary:
 	var cost: float = eq["price"] * 0.5   # 升级费 = 半价
 	if Economy.money < cost:
 		return {"ok": false, "why": "资金不足(₡%d)" % int(cost)}
-	# 执行
+	# 执行(带快照回滚)
+	var snap_inv := inventory.duplicate()
+	var snap_money: float = Economy.money
 	inventory[eq_id] = int(inventory[eq_id]) - 1
 	inventory[mat_id] = int(inventory[mat_id]) - mat_need
 	var up_id := eq_id + "_up"
 	inventory[up_id] = int(inventory.get(up_id, 0)) + 1
 	Economy.add_money(-cost)
 	var gs := get_node_or_null("/root/GameSave")
-	if gs:
-		gs.save_now()
-	_persist_economy()
+	if gs and not gs.save_now():
+		inventory = snap_inv
+		Economy.money = snap_money
+		return {"ok": false, "why": "任务档写入失败, 升级已取消"}
+	if not _persist_economy():
+		inventory = snap_inv
+		Economy.money = snap_money
+		if gs:
+			gs.save_now()
+		return {"ok": false, "why": "经济档写入失败, 升级已取消"}
 	return {"ok": true, "upgraded_to": up_id}
 
 
@@ -875,11 +937,13 @@ func exchange_fragments() -> Dictionary:
 	var need := 5   # [占位] 5 片换 1 份
 	if frag_count < need:
 		return {"ok": false, "why": "碎片不足(%d/%d)" % [frag_count, need]}
+	var snap_inv := inventory.duplicate()
 	inventory["frag_generic"] = frag_count - need
 	inventory["reverse_material"] = int(inventory.get("reverse_material", 0)) + 1
 	var gs := get_node_or_null("/root/GameSave")
-	if gs:
-		gs.save_now()
+	if gs and not gs.save_now():
+		inventory = snap_inv
+		return {"ok": false, "why": "存档写入失败, 兑换已取消"}
 	return {"ok": true}
 
 
@@ -894,7 +958,7 @@ func _is_partial(success: bool, roll: float, p: float) -> bool:
 # M2: 发现物图鉴(§5.7 简版)
 # ═══════════════════════════════════════════════════
 
-var discoveries: Array[Dictionary] = []
+var discoveries: Array = []   # JSON 回放不保留 Array[Dictionary] 类型, 用普通 Array
 
 func _maybe_discovery(def: Dictionary, seed_v: int) -> void:
 	# 勘测/信号类必得发现物; 其余 15% 概率
@@ -925,28 +989,31 @@ func discovery_count() -> int:
 # M2: 装备掉落概率(战斗类 30-60%)
 # ═══════════════════════════════════════════════════
 
+## M2: 战利品掷骰(纯函数,不修改 inventory——副作用在 _resolve 事务内应用)
 func _roll_loot(mid: String, mis: Dictionary, def: Dictionary) -> Dictionary:
 	var rng := RandomNumberGenerator.new()
-	rng.seed = int(mis["seed"]) + 1   # 不同掷骰位置
+	rng.seed = int(mis["seed"]) + 1
 	var destroyed: Array[Dictionary] = []
 	var dropped: Array[Dictionary] = []
-	# 远征材料(§15.3: 类型由任务类型决定, 数量由难度)
 	var mat_id: String = MissionDefs.drop_material(def["kind"])
 	var mat_label: String = MissionDefs.EXP_MATERIALS.get(mat_id, {}).get("label", mat_id)
 	var diff: String = def["diff"]
 	var mat_qty: int = {"D1": 1, "D2": 2, "D3": 3, "D4": 4}.get(diff, 1)
 	if mat_qty > 0:
 		dropped.append({"id": mat_id, "label": mat_label, "qty": mat_qty, "slot": "货舱"})
-		inventory[mat_id] = int(inventory.get(mat_id, 0)) + mat_qty
-	# 蓝图碎片(30-60% 概率, §5.5)
 	var frag_p: float = {"D1": 0.30, "D2": 0.40, "D3": 0.50, "D4": 0.60}.get(diff, 0.30)
 	if rng.randf() < frag_p:
 		dropped.append({"id": "frag_generic", "label": "蓝图碎片", "qty": 1, "slot": "货舱"})
-		inventory["frag_generic"] = int(inventory.get("frag_generic", 0)) + 1
-	# 焚毁物(战斗类)
 	if def["kind"] == "combat":
 		destroyed.append({"id": "pirate_mod", "label": "海盗改装火控", "qty": 1, "slot": "高槽"})
 	return {"destroyed": destroyed, "dropped": dropped}
+
+
+## M2: 将战利品入仓(只在事务成功后调用)
+func _apply_loot(loot: Dictionary) -> void:
+	for item in loot.get("dropped", []):
+		var iid: String = item["id"]
+		inventory[iid] = int(inventory.get(iid, 0)) + int(item["qty"])
 
 
 # ── 对外只读 ──
