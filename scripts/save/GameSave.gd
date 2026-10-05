@@ -127,9 +127,12 @@ func _load_or_init() -> void:
 		push_warning("GameSave: 版本不匹配(%s), 写入挂起(保护旧档)" % str(data.get("version")))
 		return
 	saved_at_wall = float(data.get("saved_at_wall", 0.0))
-	var sections: Dictionary = data.get("sections", {})
-	if typeof(sections) != TYPE_DICTIONARY:
-		sections = {}
+	var sections_v: Variant = data.get("sections", {})
+	if typeof(sections_v) != TYPE_DICTIONARY:
+		write_suspended = true
+		push_warning("GameSave: sections 顶层损坏(%s), 写入挂起(保护旧档)" % str(typeof(sections_v)))
+		return
+	var sections: Dictionary = sections_v
 	for sec_name in sections:
 		_pending[sec_name] = sections[sec_name]
 	# 已注册的节立即回放; 未注册的挂 _pending 等注册

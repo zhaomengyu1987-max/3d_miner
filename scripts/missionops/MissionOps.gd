@@ -119,8 +119,8 @@ func _apply_state(data: Variant) -> bool:
 		var m: Variant = active_d[mid]
 		if typeof(m) != TYPE_DICTIONARY:
 			return false
-		if not (m as Dictionary).has_all(
-				["task_id", "team_id", "cid", "seed", "started_wall", "ends_wall", "dur"]):
+		var need := ["task_id", "team_id", "cid", "seed", "started_wall", "ends_wall", "dur"]
+		if not (m as Dictionary).has_all(need):
 			push_warning("MissionOps: active[%s] 字段不全" % str(mid))
 			return false
 		if not MissionDefs.TASKS.has(m["task_id"]):
@@ -129,7 +129,17 @@ func _apply_state(data: Variant) -> bool:
 		if not captains_d.has(m["cid"]) or not teams_d.has(m["team_id"]):
 			push_warning("MissionOps: active[%s] 引用悬空" % str(mid))
 			return false
-		if typeof(m["ends_wall"]) not in [TYPE_INT, TYPE_FLOAT] 				or typeof(m["seed"]) not in [TYPE_INT, TYPE_FLOAT]:
+		# 全字段类型(审查 R3-P2: 消费什么验什么——结算读取全部七个)
+		for k in ["seed", "started_wall", "ends_wall", "dur"]:
+			if typeof(m[k]) not in [TYPE_INT, TYPE_FLOAT]:
+				push_warning("MissionOps: active[%s].%s 类型损坏(%s)" % [str(mid), k, str(typeof(m[k]))])
+				return false
+		for k in ["task_id", "team_id", "cid"]:
+			if typeof(m[k]) != TYPE_STRING:
+				push_warning("MissionOps: active[%s].%s 类型损坏" % [str(mid), k])
+				return false
+		if float(m["dur"]) <= 0.0 or float(m["ends_wall"]) < float(m["started_wall"]):
+			push_warning("MissionOps: active[%s] 数值非法" % str(mid))
 			return false
 	# ── 校验通过, 回放 ──
 	exploration = exploration_d
@@ -149,7 +159,9 @@ func _apply_state(data: Variant) -> bool:
 ## 启动补算(deferred): 所有节注册/回放完成后执行一次; 幂等。
 func _startup_catch_up() -> void:
 	_catch_up(_now())
-	if recruit_pool.is_empty():
+	# 空池补员仅在"从未初始化"时进行(pool_refresh_at<=0 = 新档);
+	# 恢复档的空池等计时到期由 _process 自然刷新(审查 R3-P2)
+	if recruit_pool.is_empty() and pool_refresh_at <= 0.0:
 		_refresh_pool()
 	board_refreshed.emit()
 
@@ -204,6 +216,14 @@ func _refresh_pool() -> void:
 
 
 # ── 雇佣 / 解雇 ──
+
+## 动钱后立即同步经济自档(审查 R3-P1: 钱包唯一权威 = economy_save.json,
+## MissionOps 不再在 GameSave 存钱包; 每次变更即刻落盘, 关窗/崩溃零窗口)
+func _persist_economy() -> void:
+	if Economy.has_method("save_game"):
+		Economy.save_game()
+
+
 func hire_captain(candidate_cid: String) -> Dictionary:
 	for c in recruit_pool:
 		if c["cid"] == candidate_cid:
@@ -217,6 +237,7 @@ func hire_captain(candidate_cid: String) -> Dictionary:
 				"level": 1, "exp": 0, "status": "idle"}
 			recruit_pool.erase(c)
 			get_node("/root/GameSave").touch()
+			_persist_economy()
 			captain_state_changed.emit(cid, "hired")
 			return {"ok": true, "cid": cid}
 	return {"ok": false, "why": "候选不存在"}
@@ -237,6 +258,7 @@ func dismiss_captain(cid: String) -> Dictionary:
 	Economy.add_money(MissionDefs.TIERS[captains[cid]["tier"]]["hire_fee"] * 0.5)
 	captains.erase(cid)
 	get_node("/root/GameSave").touch()
+	_persist_economy()
 	captain_state_changed.emit(cid, "dismissed")
 	return {"ok": true, "disbanded": disbanded}
 
@@ -320,6 +342,7 @@ func _resolve(mid: String) -> void:
 		var credits := float(def["credits"])
 		exploration["ep"] += ep
 		Economy.add_money(credits)
+		_persist_economy()
 		stats["done"] += 1
 		report["ep"] = ep
 		report["credits"] = credits

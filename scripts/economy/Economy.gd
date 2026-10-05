@@ -84,10 +84,7 @@ func _ready() -> void:
 	_roll_visit_schedule()
 	# 世界实体与 UI 延后一帧挂到场景树（autoload 先于主场景就绪）
 	call_deferred("_spawn_world_and_ui")
-	# GameSave 节注册(蓝图 §6.3): 钱包与 MissionOps 任务态同档原子落盘。
-	# GameSave 在 autoload 序列中位于本节点之后, _ready 时尚未入树 → 必须 deferred。
-	# GameSave 不存在(main 未并入本分支)时静默跳过, 保持零侵入。
-	call_deferred("_gs_register")
+
 
 
 func _spawn_world_and_ui() -> void:
@@ -101,29 +98,6 @@ func _spawn_world_and_ui() -> void:
 	get_tree().root.add_child(_ui)
 	if not modules["hangar"]["built"]:
 		post_event("提示：点击空间站打开模块菜单，先建物流机库（燃料冰矿要顺手囤）", "info")
-
-
-## GameSave 节: 钱包(与 MissionOps 同档原子; apply 失败返回 false → GameSave 挂起写入保护旧档)
-func _gs_register() -> void:
-	var gs := get_node_or_null("/root/GameSave")
-	if gs == null or not gs.has_method("register_section"):
-		return
-	gs.register_section("economy", Callable(self, "_gs_get"), Callable(self, "_gs_apply"))
-
-
-func _gs_get() -> Dictionary:
-	return {"money": money}
-
-
-func _gs_apply(data: Variant) -> bool:
-	if typeof(data) != TYPE_DICTIONARY:
-		return false
-	var m: Variant = data.get("money", null)
-	if typeof(m) != TYPE_FLOAT and typeof(m) != TYPE_INT:
-		return false
-	money = float(m)
-	money_changed.emit()
-	return true
 
 
 ## 测试钩子：恢复到全新开局状态（只改内存状态, 不动存档文件）
