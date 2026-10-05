@@ -408,6 +408,20 @@ func _spawn_one(prefill := false) -> void:
 
 ## 自动矿机取目标: 池内可见、未被捕获、指定档位、未被认领的最近矿
 ## 任意档位、储量最大的空闲矿（护卫舰 2026-10-02 拍板: 全类型皆挖、优先大块）
+## 无优先随机选矿, 跳过 S 档(护卫舰 2026-10-03 拍板: 不做优先、避开 S)
+func get_free_ore_random(claimed: Array) -> BeltOre:
+	var eligible: Array[BeltOre] = []
+	for ore in _pool:
+		if not ore.visible or ore.captured or ore in claimed:
+			continue
+		if ore.tier == "S":
+			continue
+		eligible.append(ore)
+	if eligible.is_empty():
+		return null
+	return eligible[randi() % eligible.size()]
+
+
 func get_free_ore_biggest(claimed: Array) -> BeltOre:
 	var best: BeltOre = null
 	for ore in _pool:

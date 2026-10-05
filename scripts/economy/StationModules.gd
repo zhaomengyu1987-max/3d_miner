@@ -17,7 +17,7 @@ const SHIP_NOSE_FIX := PI      # 模型头向校正(look_at 后 -Z 对站; 若�
 const SHIP_APPROACH_SPD := 6.0  # 进港速度 m/s（缩小世界快节奏）
 const SHIP_DEPART_SPD := 6.0    # 离港速度 m/s
 const SHIP_DEPART_BACK := 6.0   # 离港先径向后退距离(再转身走)
-const SHIP_LEN := {"small": 2.2, "standard": 3.0, "heavy": 4.2, "giant": 5.6}  # 各型号目标长度(米,草案)
+const SHIP_LEN := {"small": 5.0, "standard": 5.8, "heavy": 6.4, "giant": 7.0}  # 各型号目标长度(米) [2026-10-03 拍板: 5-7m]
 const HULL_COLOR := Color(0.58, 0.64, 0.74)  # 无材质低模的中性船壳色
 ## 站体点击判定半径(米): 覆盖 athanor 站体, 与避让半径同量级
 const STATION_CLICK_RADIUS := 6.0

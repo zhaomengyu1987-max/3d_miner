@@ -9,7 +9,7 @@ extends Node3D
 enum State { IDLE, TO_ORE, MINING, TO_STATION, RETURN }
 
 const ShipScene := preload("res://sences/MiningCorvette.tscn")
-const CORVETTE_SIZE := 2.4                    # 目标最大边(米)
+const CORVETTE_SIZE := 7.2                    # 目标最大边(米) [2026-10-03 拍板: ×3]
 const HULL_COLOR := Color(0.55, 0.58, 0.68)   # 无材质低模的舰壳色
 const DEBUG_SCALE := 50.0
 const RETRY_S := 1.0
@@ -72,7 +72,7 @@ func _process(delta: float) -> void:
 				_abort_target()
 				return
 			var d := _target.global_position - global_position
-			if d.length() <= 2.4:
+			if d.length() <= _target.body_radius() + CORVETTE_SIZE * 0.5 + 0.6:
 				_start_mining()
 			else:
 				global_position += d.normalized() * _speed() * delta
@@ -108,7 +108,7 @@ func _try_acquire() -> void:
 	if _cargo_total() >= GameData.ECON["corvette_cargo"] - 0.5:
 		_state = State.TO_STATION
 		return
-	var target := belt.get_free_ore_biggest(claims)  # 全类型皆挖、优先大块(2026-10-02 拍板)
+	var target := belt.get_free_ore_random(claims)  # 无优先随机、避开 S 档(2026-10-03 拍板)
 	if target == null:
 		if _cargo_total() > 0.0:
 			_state = State.TO_STATION  # 池里没 M 矿: 先把货送回去
@@ -136,7 +136,7 @@ func _mining_tick(delta: float) -> void:
 		return
 	# 环绕目标(EVE 矿船式盘旋)——角速度见 GameData.ECON["corvette_orbit_speed"]
 	_orbit_a += delta * float(GameData.ECON["corvette_orbit_speed"])
-	var radius := 2.2
+	var radius := _target.body_radius() + CORVETTE_SIZE * 0.5 + 0.8
 	var desired := _target.global_position \
 		+ Vector3(cos(_orbit_a) * radius, 0.4, sin(_orbit_a) * radius)
 	global_position = global_position.move_toward(desired, _speed() * delta)
@@ -187,7 +187,7 @@ func _unload() -> void:
 ## 卸完/无目标立即再出击(不回泊位)
 func _try_immediate() -> void:
 	# 全类型皆挖、优先大块(2026-10-02 拍板)
-	var target: BeltOre = belt.get_free_ore_biggest(claims) \
+	var target: BeltOre = belt.get_free_ore_random(claims) \
 		if belt != null and is_instance_valid(belt) else null
 	if target == null:
 		if _cargo_total() > 0.0:

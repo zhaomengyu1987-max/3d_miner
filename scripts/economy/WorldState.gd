@@ -27,7 +27,7 @@ var war_initial_stockpile := 0.0  # 开战瞬间快照的总量，决定这场�
 var dealer: Freighter = null
 var rng := RandomNumberGenerator.new()
 
-var _current_faction := "empire"
+var current_faction := "empire"
 var _save_path := "user://world_state_save.json"
 
 ## M2：10 小国当前阵营归属（fid -> "empire"/"southern"）。初始值来自
@@ -91,25 +91,32 @@ func _enter_phase(new_phase: int) -> void:
 			war_initial_stockpile = 0.0
 		Phase.BUILDUP:
 			var cycle_index := (Economy.day - 1) / maxi(_cycle_len(), 1)
-			_current_faction = "empire" if cycle_index % 2 == 0 else "southern"
+			current_faction = "empire" if cycle_index % 2 == 0 else "southern"
 			stockpile = 0.0
 			_roll_minor_defections()
 			Economy.post_event("边境传来军情：%s 开始大规模军备调度，物流需求预计持续走高" % \
-				String(GameData.WORLD_FACTIONS[_current_faction]["name"]), "warn")
+				String(GameData.WORLD_FACTIONS[current_faction]["name"]), "warn")
 		Phase.WAR:
 			war_initial_stockpile = maxf(stockpile, 1.0)
 			Economy.post_event("局部冲突爆发：%s 当面开战——军需订单短期内暴涨" % \
-				String(GameData.WORLD_FACTIONS[_current_faction]["name"]), "warn")
-	phase_changed.emit(_phase_name(new_phase))
+				String(GameData.WORLD_FACTIONS[current_faction]["name"]), "warn")
+	phase_changed.emit(phase_name(new_phase))
 
 
-func _phase_name(p: int) -> String:
-	match p:
+## 相位名（公开接口, 2026-10-02 转正给新闻条/角标用）。p < 0 时用当前相位。
+func phase_name(p := -1) -> String:
+	var v: int = phase if p < 0 else p
+	match v:
 		Phase.BUILDUP:
 			return "筹备期"
 		Phase.WAR:
 			return "开战期"
 	return "和平期"
+
+
+## 当前阵营显示名（公开接口, 新闻条角标用）
+func faction_display_name() -> String:
+	return String(GameData.WORLD_FACTIONS.get(current_faction, {}).get("name", current_faction))
 
 
 # ================= 相位推导（纯函数，不占额外存档字段，和 Economy.war_active() 同一思路） =================
@@ -129,22 +136,24 @@ func _phase_for_day(day: int) -> int:
 	return Phase.WAR
 
 
-## 当前相位已经走了多久（0~1）——用来拉"筹备期临近开战、调度越来越密集"的曲线
-func _phase_progress(day: int) -> float:
-	var pos := (day - 1) % maxi(_cycle_len(), 1)
+## 当前相位已走完的比例 0~1（公开接口; day < 0 时用今天）——UI 可画相位进度条
+func phase_progress(day := -1) -> float:
+	var d: int = Economy.day if day < 0 else day
+	var pos := (d - 1) % maxi(_cycle_len(), 1)
 	var peace_d := int(GameData.WORLD["peace_days"])
 	var buildup_d := int(GameData.WORLD["buildup_days"])
 	var war_d := int(GameData.WORLD["war_days"])
 	if pos < peace_d:
-		return float(pos) / maxf(float(peace_d), 1.0)
+		return clampf(float(pos) / maxf(float(peace_d), 1.0), 0.0, 1.0)
 	elif pos < peace_d + buildup_d:
-		return float(pos - peace_d) / maxf(float(buildup_d), 1.0)
-	return float(pos - peace_d - buildup_d) / maxf(float(war_d), 1.0)
+		return clampf(float(pos - peace_d) / maxf(float(buildup_d), 1.0), 0.0, 1.0)
+	return clampf(float(pos - peace_d - buildup_d) / maxf(float(war_d), 1.0), 0.0, 1.0)
 
 
-## 当前相位还剩几天结束——dealer 的 dwell_override 用它换算成秒
-func _days_left_in_phase(day: int) -> int:
-	var pos := (day - 1) % maxi(_cycle_len(), 1)
+## 当前相位还剩几天（公开接口; day < 0 时用今天）——新闻条"还剩 X 天"用它
+func days_left_in_phase(day := -1) -> int:
+	var d: int = Economy.day if day < 0 else day
+	var pos := (d - 1) % maxi(_cycle_len(), 1)
 	var peace_d := int(GameData.WORLD["peace_days"])
 	var buildup_d := int(GameData.WORLD["buildup_days"])
 	var war_d := int(GameData.WORLD["war_days"])
@@ -160,7 +169,7 @@ func _days_left_in_phase(day: int) -> int:
 func freighter_frequency_mult() -> float:
 	match phase:
 		Phase.BUILDUP:
-			var p := _phase_progress(Economy.day)
+			var p := phase_progress(Economy.day)
 			return lerpf(float(GameData.WORLD["freighter_mult_buildup_lo"]),
 				float(GameData.WORLD["freighter_mult_buildup_hi"]), p)
 		Phase.WAR:
@@ -222,7 +231,7 @@ func _roll_minor_defections() -> void:
 func _on_military_sale(_goods_id: String, qty: int, price: float) -> void:
 	if phase != Phase.BUILDUP:
 		return  # 开战期是消耗阶段不是反哺阶段（M1 拍板：战争节奏先走固定时长，见路线图）
-	var eff := supply_efficiency(_current_faction)
+	var eff := supply_efficiency(current_faction)
 	var value: float = float(qty) * price
 	stockpile += value * eff * float(GameData.WORLD["player_contrib_scale"])
 	stockpile_changed.emit(stockpile, float(GameData.WORLD["stockpile_target"]))
@@ -249,10 +258,10 @@ func _ensure_dealer() -> void:
 	# SHIP_LEN[f.def_id] 查不到会崩（2026-10-02 冒烟测试炸出来的 bug）。
 	# 发牌员是"大批采购船团"概念，视觉上给个 giant 船模比较贴切。
 	f.def_id = "giant"
-	f.name = "军需采购团·%s" % String(GameData.WORLD_FACTIONS[_current_faction]["name"])
+	f.name = "军需采购团·%s" % String(GameData.WORLD_FACTIONS[current_faction]["name"])
 	f.cap = 1000000000.0   # 概念上是"off-screen 的大批采购船团"，不受单船舱位限制
 	f.funds = float(GameData.WORLD["dealer_funds"])
-	f.dwell_override = maxf(float(_days_left_in_phase(Economy.day)), 0.2) * Economy.day_length()
+	f.dwell_override = maxf(float(days_left_in_phase(Economy.day)), 0.2) * Economy.day_length()
 	if not Economy.dock_special_freighter(f):
 		return  # 泊位已满：先不占位，下一天 _ensure_dealer() 会再试
 	dealer = f
@@ -271,7 +280,7 @@ func _despawn_dealer(reason: String) -> void:
 func _refresh_dealer(day: int) -> void:
 	if dealer == null or not is_instance_valid(dealer):
 		return
-	dealer.dwell_override = maxf(float(_days_left_in_phase(day)), 0.2) * Economy.day_length()
+	dealer.dwell_override = maxf(float(days_left_in_phase(day)), 0.2) * Economy.day_length()
 	_refresh_dealer_offers()
 
 
@@ -307,7 +316,7 @@ func _refresh_dealer_offers() -> void:
 func _demand_scale() -> float:
 	var base := 0.0
 	if phase == Phase.BUILDUP:
-		base = lerpf(0.3, 1.0, _phase_progress(Economy.day))
+		base = lerpf(0.3, 1.0, phase_progress(Economy.day))
 	elif phase == Phase.WAR:
 		var intensity: float = war_initial_stockpile / float(GameData.WORLD["stockpile_target"])
 		var remaining_frac: float = stockpile / maxf(war_initial_stockpile, 1.0)
@@ -315,7 +324,7 @@ func _demand_scale() -> float:
 	else:
 		return 0.0
 	# M2：当面主战方的盟友越多，采购代理的扫货需求基数跟着放大（反之收缩）。
-	return base * _ally_mult(_current_faction)
+	return base * _ally_mult(current_faction)
 
 
 # ================= 轻量独立存档（不碰 Economy 的存档结构，降低改动风险） =================
@@ -324,7 +333,7 @@ func _save() -> void:
 	var data := {
 		"stockpile": stockpile,
 		"war_initial_stockpile": war_initial_stockpile,
-		"current_faction": _current_faction,
+		"current_faction": current_faction,
 		"minor_bloc": _minor_bloc,
 	}
 	var file := FileAccess.open(_save_path, FileAccess.WRITE)
@@ -346,7 +355,7 @@ func _load() -> void:
 		return
 	stockpile = float(parsed.get("stockpile", 0.0))
 	war_initial_stockpile = float(parsed.get("war_initial_stockpile", 0.0))
-	_current_faction = String(parsed.get("current_faction", "empire"))
+	current_faction = String(parsed.get("current_faction", "empire"))
 	var saved_bloc: Variant = parsed.get("minor_bloc", null)
 	if typeof(saved_bloc) == TYPE_DICTIONARY:
 		for fid in saved_bloc:
@@ -359,7 +368,7 @@ func debug_reset() -> void:
 	phase = Phase.PEACE
 	stockpile = 0.0
 	war_initial_stockpile = 0.0
-	_current_faction = "empire"
+	current_faction = "empire"
 	_init_minor_factions()
 	_despawn_dealer("")
 	if FileAccess.file_exists(_save_path):
