@@ -206,6 +206,70 @@ func _run_all() -> void:
 	mo.reset_state()
 	get_node("/root/GameSave").save_now()
 
+	# ⑰ 前置: ⑯ 的 reset 清光了 → 重新雇佣+建队供 ⑰⑱⑲ 使用
+	if mo.captains.is_empty() and not mo.recruit_pool.is_empty():
+		mo.hire_captain(mo.recruit_pool[0]["cid"])
+	if mo.teams.is_empty():
+		for c in mo.captains:
+			if mo.captains[c]["status"] == "idle":
+				mo.create_team("测试队", c)
+				break
+
+	# ⑰ 保存失败回滚: 雇佣(R4-P1)
+	var gs := get_node("/root/GameSave")
+	var money_17: float = Economy.money
+	var caps_17: int = mo.captains.size()
+	var pool_17: int = mo.recruit_pool.size()
+	gs.write_suspended = true            # 模拟保存失败
+	if not mo.recruit_pool.is_empty():
+		var r17: Dictionary = mo.hire_captain(mo.recruit_pool[0]["cid"])
+		_check("保存失败: 雇佣被拒", not bool(r17.get("ok", false)))
+		_check("保存失败: 钱未扣", Economy.money == money_17)
+		_check("保存失败: 舰长表未变", mo.captains.size() == caps_17)
+		_check("保存失败: 池未变", mo.recruit_pool.size() == pool_17)
+	gs.write_suspended = false
+
+	# ⑱ 保存失败回滚: 解雇(R4-P1)
+	var caps_18: int = mo.captains.size()
+	var money_18: float = Economy.money
+	gs.write_suspended = true
+	var any_idle := ""
+	for c in mo.captains:
+		if mo.captains[c]["status"] == "idle":
+			any_idle = c
+			break
+	if any_idle != "":
+		var r18: Dictionary = mo.dismiss_captain(any_idle)
+		_check("保存失败: 解雇被拒", not bool(r18.get("ok", false)))
+		_check("保存失败: 退款未发", Economy.money == money_18)
+		_check("保存失败: 舰长仍在", mo.captains.size() == caps_18)
+	gs.write_suspended = false
+
+	# ⑲ 保存失败回滚: 结算(R4-P1)
+	# 派遣未来任务 → 挂起写入 → 到点结算 → 任务放回(不结算不奖励)
+	var done_19 := int(mo.stats["done"]) + int(mo.stats["failed"])
+	var tid19 := ""
+	for t in mo.teams:
+		if not mo._team_busy(t):
+			tid19 = t
+			break
+	if tid19 != "":
+		var r19: Dictionary = mo.dispatch(tid19, "mo_survey_ice", 555)
+		if bool(r19.get("ok", false)):
+			var mid19: String = r19.get("mission_id", "")
+			gs.write_suspended = true
+			mo.now_override_sec = float(mo.active[mid19]["ends_wall"]) + 1.0
+			mo._catch_up(mo._now())
+			_check("保存失败: 任务放回不结算", mo.active.has(mid19))
+			_check("保存失败: 无新结算计数",
+				int(mo.stats["done"]) + int(mo.stats["failed"]) == done_19)
+			gs.write_suspended = false
+			# 恢复后可正常结算
+			mo._catch_up(mo._now())
+			_check("恢复后: 任务正常结算", not mo.active.has(mid19))
+	else:
+		_check("保存失败结算: 跳过(无空闲编队)", true)
+
 	print("== 结果: %s (fails=%d) ==" % ["PASS" if _fails == 0 else "FAIL", _fails])
 	get_tree().quit(0 if _fails == 0 else 1)
 

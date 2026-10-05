@@ -238,13 +238,21 @@ func hire_captain(candidate_cid: String) -> Dictionary:
 	var fee := float(target["fee"])
 	if Economy.money < fee:
 		return {"ok": false, "why": "资金不足(押金 %d)" % int(fee)}
-	Economy.add_money(-fee)
+	# ── 安全顺序(R4-P1): 先改内存+同步落盘 missionops(检查结果), 再动钱 ──
+	# 保存失败 → 回滚内存, 钱不动; 成功后再扣钱+存经济(此点崩溃=免费舰长, 不通胀)
 	_cap_seq += 1
 	var cid := "cap_%03d" % _cap_seq
 	captains[cid] = {"name": target["name"], "tier": target["tier"], "spec": target["spec"],
 		"level": 1, "exp": 0, "status": "idle"}
 	recruit_pool.erase(target)
-	get_node("/root/GameSave").touch()
+	var gs := get_node_or_null("/root/GameSave")
+	if gs and not gs.save_now():
+		# missionops 落盘失败 → 回滚, 钱不动
+		captains.erase(cid)
+		_cap_seq -= 1
+		recruit_pool.append(target)
+		return {"ok": false, "why": "存档写入失败, 雇佣已取消(保护钱包)"}
+	Economy.add_money(-fee)
 	_persist_economy()
 	captain_state_changed.emit(cid, "hired")
 	return {"ok": true, "cid": cid}
@@ -255,16 +263,25 @@ func dismiss_captain(cid: String) -> Dictionary:
 		return {"ok": false, "why": "舰长不存在"}
 	if captains[cid]["status"] != "idle":
 		return {"ok": false, "why": "在途舰长不可解雇"}
-	# 解雇自动解散其编队(审查 P1: 不留悬空占位占容量)
+	# ── 安全顺序(R4-P1): 先删舰长+解散编队+同步落盘(检查), 退款后给 ──
+	# 保存失败 → 回滚, 退款不发; 成功后退款(此点崩溃=丢退款, 不双给)
 	var disbanded: Array[String] = []
 	for tid in teams.keys():
 		if teams[tid]["captain_id"] == cid:
 			disbanded.append(tid)
 	for tid in disbanded:
 		teams.erase(tid)
-	Economy.add_money(MissionDefs.TIERS[captains[cid]["tier"]]["hire_fee"] * 0.5)
+	var cap_snapshot: Dictionary = captains[cid].duplicate()
+	var fee: float = MissionDefs.TIERS[cap_snapshot["tier"]]["hire_fee"] * 0.5
 	captains.erase(cid)
-	get_node("/root/GameSave").touch()
+	var gs := get_node_or_null("/root/GameSave")
+	if gs and not gs.save_now():
+		# missionops 落盘失败 → 回滚, 退款不发
+		captains[cid] = cap_snapshot
+		for tid in disbanded:
+			teams[tid] = {"name": "恢复", "captain_id": cid}
+		return {"ok": false, "why": "存档写入失败, 解雇已取消(保护退款)"}
+	Economy.add_money(fee)
 	_persist_economy()
 	captain_state_changed.emit(cid, "dismissed")
 	return {"ok": true, "disbanded": disbanded}
@@ -353,14 +370,19 @@ func _resolve(mid: String) -> void:
 		"seed": int(mis["seed"]), "captain": cap.get("name", "?"),
 		"duration": float(mis["dur"]),
 	}
-	# ── 第一步: 任务出册 + 舰长状态 + 同步落盘(此点之后崩溃不会重复结算) ──
+	# ── 第一步: 任务出册 + 舰长状态 + 同步落盘(检查结果, 失败放回+中止) ──
 	active.erase(mid)
 	if captains.has(cid):
 		captains[cid]["status"] = "idle"
 		captain_state_changed.emit(cid, "idle")
 	var gs := get_node_or_null("/root/GameSave")
-	if gs:
-		gs.save_now()
+	if gs and not gs.save_now():
+		# 落盘失败 → 放回任务, 不发奖励, 下帧重试
+		active[mid] = mis
+		if captains.has(cid):
+			captains[cid]["status"] = "on_mission"
+		push_warning("MissionOps: 结算落盘失败, 任务放回重试(mid=%s)" % mid)
+		return
 	# ── 第二步: 发奖励(此点之后崩溃丢奖励, 不双给) ──
 	if success:
 		var ep := int(def["ep"])
