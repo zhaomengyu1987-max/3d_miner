@@ -92,11 +92,11 @@ func _run_all() -> void:
 	_check("离线补算幂等(不双发)", int(mo.stats["done"]) == done_before)
 
 	# ⑨ 失败路径: 造一个必败任务(seed 穷举找 roll≥P)
-	var bad_seed := _find_failing_seed("mo_combat_skirmish", cid)
+	var bad_seed := _find_failing_seed("mo_salvage_field", cid)  # M2: combat 需武器, 改用无门槛任务
 	_check("找到必败 seed", bad_seed >= 0)
 	if bad_seed >= 0:
 		var m2: float = Economy.money            # 基准 = 派遣前余额(成功结算已入账)
-		var rf: Dictionary = mo.dispatch(tid, "mo_combat_skirmish", bad_seed)
+		var rf: Dictionary = mo.dispatch(tid, "mo_salvage_field", bad_seed)
 		_check("必败任务派遣成功(可派遣)", bool(rf.get("ok", false)))
 		mo.now_override_sec = float(mo.active[rf["mission_id"]]["ends_wall"]) + 1.0
 		await get_tree().process_frame

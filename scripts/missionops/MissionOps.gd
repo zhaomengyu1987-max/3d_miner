@@ -21,11 +21,11 @@ const POOL_REFRESH_SEC := 1800.0     # 30 现实分钟 [占位]
 const CAPTAIN_SHARE := 0.20          # 舰长分成(报告注记, M2 落地逐账)
 
 var exploration: Dictionary = {"ep": 0, "level": 1}
-var captains: Dictionary = {}        # cid -> {name, tier, spec, level, exp, status}
+var captains: Dictionary = {}        # cid -> {name, tier, spec, level, exp, status, skills, points}
 var recruit_pool: Array = []         # [{cid, name, tier, spec, fee}]
 var pool_refresh_at: float = 0.0
 var pool_seed: int = 0
-var teams: Dictionary = {}           # team_id -> {name, captain_id}
+var teams: Dictionary = {}           # team_id -> {name, captain_id, ship_uids: []}
 var active: Dictionary = {}          # mission_id -> {task_id, team_id, cid, seed, started_wall, ends_wall, dur}
 var stats: Dictionary = {"done": 0, "failed": 0}
 var _cap_seq: int = 0
@@ -33,6 +33,16 @@ var _team_seq: int = 0
 var _mis_seq: int = 0
 var _last_report: Dictionary = {}
 var _ui: Node = null
+# ── M2 新增 ──
+var fleet: Dictionary = {}           # ship_uid -> {def_id, name, fitted: {power/elec/weapon/defense}}
+var ship_name_counter: int = 0       # 自动编号 001号/002号…
+var inventory: Dictionary = {}       # {eq_id: count, exp_material: count, frag_id: count}
+var board: Dictionary = {            # 三层任务板(§5.8)
+	"resident_cd": {},               # task_id -> cooldown_until_wall
+	"rotation": [],                  # 当前轮换任务 id 列表
+	"rotation_at": 0.0,              # 下次轮换刷新墙钟
+	"rotation_seed": 0,
+}
 
 
 func _ready() -> void:
@@ -61,6 +71,8 @@ func _get_state() -> Dictionary:
 		"pool_refresh_at": pool_refresh_at, "pool_seed": pool_seed,
 		"teams": teams, "active": active, "stats": stats,
 		"cap_seq": _cap_seq, "team_seq": _team_seq, "mis_seq": _mis_seq,
+		"fleet": fleet, "ship_name_counter": ship_name_counter,
+		"inventory": inventory, "board": board,
 	}
 
 
@@ -153,6 +165,13 @@ func _apply_state(data: Variant) -> bool:
 	_cap_seq = int(data.get("cap_seq", 0))
 	_team_seq = int(data.get("team_seq", 0))
 	_mis_seq = int(data.get("mis_seq", 0))
+	# M2 字段
+	fleet = data.get("fleet", {})
+	ship_name_counter = int(data.get("ship_name_counter", 0))
+	inventory = data.get("inventory", {})
+	var board_d: Variant = data.get("board", null)
+	if typeof(board_d) == TYPE_DICTIONARY:
+		board = board_d
 	return true
 
 
@@ -173,6 +192,8 @@ func _process(_delta: float) -> void:
 	var now := _now()
 	if now >= pool_refresh_at:
 		_refresh_pool()
+	if now >= float(board.get("rotation_at", 0.0)):
+		_refresh_rotation()
 		board_refreshed.emit()
 	if active.is_empty():
 		return
@@ -360,6 +381,10 @@ func dispatch(team_id: String, task_id: String, seed_override: int = -1) -> Dict
 	var cid: String = teams[team_id]["captain_id"]
 	if not captains.has(cid) or captains[cid]["status"] != "idle":
 		return {"ok": false, "why": "舰长不在岗"}
+	# 装备门槛检查(§15.4)
+	var gaps: Array[String] = check_equip_req(task_id, team_id)
+	if not gaps.is_empty():
+		return {"ok": false, "why": "装备不足: " + " · ".join(gaps)}
 	var def: Dictionary = MissionDefs.TASKS[task_id]
 	# 同步落盘+回滚(自查 P2: 崩溃丢派遣而非幽灵在途)
 	var snap_seq := _mis_seq
@@ -394,11 +419,8 @@ func _resolve(mid: String) -> void:
 	var roll := rng.randf()
 	var p := MissionDefs.success_probability(def, cap)
 	var success := roll < p
-	var report := {
-		"mission_id": mid, "task": def["name"], "success": success,
-		"seed": int(mis["seed"]), "captain": cap.get("name", "?"),
-		"duration": float(mis["dur"]),
-	}
+	# M2: 富化战报(KILLREPORT 数据)
+	var report := _build_killreport(mid, mis, def, success, cid)
 	# 第一步: 任务出册 + 舰长状态 + 同步落盘(检查结果, 失败放回+中止)
 	var snap_done := int(stats["done"])
 	var snap_failed := int(stats["failed"])
@@ -446,6 +468,7 @@ func _resolve(mid: String) -> void:
 		stats["failed"] += 1
 		_give_captain_exp(cid, 5)
 	_last_report = report
+	_set_cooldown(mis["task_id"])   # M2: 常驻任务冷却(§5.8)
 	if gs:
 		gs.touch()
 	mission_completed.emit(report)
@@ -478,13 +501,294 @@ func reset_state() -> void:
 	_team_seq = 0
 	_mis_seq = 0
 	_last_report = {}
+	fleet = {}
+	ship_name_counter = 0
+	inventory = {}
+	board = {"resident_cd": {}, "rotation": [], "rotation_at": 0.0, "rotation_seed": 0}
 	_refresh_pool()
+	_refresh_rotation()
+
+
+# ═══════════════════════════════════════════════════
+# M2: 舰船名册(§14 启用/命名/退役)
+# ═══════════════════════════════════════════════════
+
+## 启用舰船: Economy.inv 商品 -1 → 名册 +1, 自动编号(§14)
+func commission_ship(def_id: String) -> Dictionary:
+	if not GameData.SHIPS.has(def_id):
+		return {"ok": false, "why": "船型不存在"}
+	# 检查库存(装备了能源才有资格启用? M2 先不卡装备, M3 加)
+	var have: int = int(Economy.inv.get(def_id, 0))
+	if have < 1:
+		return {"ok": false, "why": "库存无此船(需先建造)"}
+	Economy.inv[def_id] = have - 1
+	ship_name_counter += 1
+	var uid := "ship_%03d" % ship_name_counter
+	var ship_name := "%03d号" % ship_name_counter
+	fleet[uid] = {"def_id": def_id, "name": ship_name,
+		"fitted": {"power": "", "elec": "", "weapon": "", "defense": ""}}
+	var gs := get_node_or_null("/root/GameSave")
+	if gs and not gs.save_now():
+		# 回滚
+		Economy.inv[def_id] = have
+		ship_name_counter -= 1
+		fleet.erase(uid)
+		return {"ok": false, "why": "存档写入失败, 启用已取消"}
+	if not _persist_economy():
+		Economy.inv[def_id] = have
+		ship_name_counter -= 1
+		fleet.erase(uid)
+		if gs:
+			gs.save_now()
+		return {"ok": false, "why": "经济档写入失败, 启用已取消"}
+	return {"ok": true, "uid": uid, "name": ship_name}
+
+
+## 退役: 自动卸装回仓库, 转回库存商品(§14)
+func decommission_ship(uid: String) -> Dictionary:
+	if not fleet.has(uid):
+		return {"ok": false, "why": "舰船不存在"}
+	if is_ship_on_mission(uid):
+		return {"ok": false, "why": "在途舰船不可退役"}
+	var ship: Dictionary = fleet[uid]
+	# 自动卸装
+	for slot in ship["fitted"]:
+		var eq_id: String = ship["fitted"][slot]
+		if eq_id != "":
+			inventory[eq_id] = int(inventory.get(eq_id, 0)) + 1
+	# 从编队移除
+	for tid in teams:
+		if teams[tid].get("ship_uids", []).has(uid):
+			teams[tid]["ship_uids"].erase(uid)
+	var def_id: String = ship["def_id"]
+	fleet.erase(uid)
+	Economy.inv[def_id] = int(Economy.inv.get(def_id, 0)) + 1
+	var gs := get_node_or_null("/root/GameSave")
+	if gs:
+		gs.save_now()
+	_persist_economy()
+	return {"ok": true}
+
+
+func ship_count() -> int:
+	return fleet.size()
+
+
+func is_ship_on_mission(ship_uid: String) -> bool:
+	for mid in active:
+		var tid: String = active[mid]["team_id"]
+		if teams.has(tid):
+			for uid in teams[tid].get("ship_uids", []):
+				if uid == ship_uid:
+					return true
+	return false
+
+
+# ═══════════════════════════════════════════════════
+# M2: 装备系统(§15 安装/卸下/门槛)
+# ═══════════════════════════════════════════════════
+
+## 安装装备到舰船
+func install_equipment(ship_uid: String, eq_id: String) -> Dictionary:
+	if not fleet.has(ship_uid):
+		return {"ok": false, "why": "舰船不存在"}
+	if not MissionDefs.EQUIPMENT.has(eq_id):
+		return {"ok": false, "why": "装备不存在"}
+	if is_ship_on_mission(ship_uid):
+		return {"ok": false, "why": "在途舰船不可换装"}
+	if int(inventory.get(eq_id, 0)) < 1:
+		return {"ok": false, "why": "库存无此装备"}
+	var eq: Dictionary = MissionDefs.EQUIPMENT[eq_id]
+	var slot: String = eq["slot"]
+	var ship: Dictionary = fleet[ship_uid]
+	# 卸下旧装备回仓
+	var old: String = ship["fitted"][slot]
+	if old != "":
+		inventory[old] = int(inventory.get(old, 0)) + 1
+	# 安装新的
+	inventory[eq_id] = int(inventory.get(eq_id, 0)) - 1
+	ship["fitted"][slot] = eq_id
+	var gs := get_node_or_null("/root/GameSave")
+	if gs:
+		gs.save_now()
+	return {"ok": true, "replaced": old}
+
+
+## 卸下装备
+func remove_equipment(ship_uid: String, slot: String) -> Dictionary:
+	if not fleet.has(ship_uid):
+		return {"ok": false, "why": "舰船不存在"}
+	if is_ship_on_mission(ship_uid):
+		return {"ok": false, "why": "在途舰船不可换装"}
+	var ship: Dictionary = fleet[ship_uid]
+	var eq_id: String = ship["fitted"].get(slot, "")
+	if eq_id == "":
+		return {"ok": false, "why": "该槽位为空"}
+	inventory[eq_id] = int(inventory.get(eq_id, 0)) + 1
+	ship["fitted"][slot] = ""
+	var gs := get_node_or_null("/root/GameSave")
+	if gs:
+		gs.save_now()
+	return {"ok": true, "eq_id": eq_id}
+
+
+## 统计编队装备(slot → count)
+func get_team_equipment(team_id: String) -> Dictionary:
+	var result := {"power": 0, "elec": 0, "weapon": 0, "defense": 0}
+	if not teams.has(team_id):
+		return result
+	for uid in teams[team_id].get("ship_uids", []):
+		if fleet.has(uid):
+			for slot in fleet[uid]["fitted"]:
+				if fleet[uid]["fitted"][slot] != "":
+					result[slot] = int(result.get(slot, 0)) + 1
+	return result
+
+
+## 装备门槛检查(§15.4): 返回缺口描述(空=通过)
+func check_equip_req(task_id: String, team_id: String) -> Array[String]:
+	if not MissionDefs.TASKS.has(task_id):
+		return []
+	var def: Dictionary = MissionDefs.TASKS[task_id]
+	var equipped: Dictionary = get_team_equipment(team_id)
+	return MissionDefs.equip_gap(def, equipped)
+
+
+## 给测试/作弊口: 直接入库装备
+func grant_equipment(eq_id: String, count: int = 1) -> void:
+	inventory[eq_id] = int(inventory.get(eq_id, 0)) + count
+
+
+## 给测试/作弊口: 直接入库远征材料
+func grant_material(mat_id: String, count: int = 1) -> void:
+	inventory[mat_id] = int(inventory.get(mat_id, 0)) + count
+
+
+# ═══════════════════════════════════════════════════
+# M2: 三层任务板(§5.8 常驻/轮换/发现)
+# ═══════════════════════════════════════════════════
+
+func _refresh_rotation() -> void:
+	board["rotation_seed"] = int(_now() * 1000.0) ^ (ship_name_counter * 31337)
+	board["rotation_at"] = _now() + MissionDefs.ROTATION_REFRESH_SEC
+	var rng := RandomNumberGenerator.new()
+	rng.seed = int(board["rotation_seed"])
+	var pool: Array = MissionDefs.ROTATION_POOL.duplicate()
+	board["rotation"] = []
+	for i in mini(MissionDefs.ROTATION_SLOTS, pool.size()):
+		var idx := rng.randi_range(0, pool.size() - 1)
+		board["rotation"].append(pool[idx])
+		pool.remove_at(idx)
+
+
+## 当前可见任务列表(常驻+轮换, 排除冷却中)
+func get_board_tasks() -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	var now := _now()
+	# 常驻层
+	for tid in MissionDefs.RESIDENT_TASKS:
+		if MissionDefs.TASKS.has(tid):
+			var def: Dictionary = MissionDefs.TASKS[tid]
+			var cd_until: float = float(board["resident_cd"].get(tid, 0.0))
+			var on_cd := now < cd_until
+			result.append({"id": tid, "layer": "resident", "def": def,
+				"cooldown": on_cd, "cd_remain": maxf(0.0, cd_until - now)})
+	# 轮换层
+	for tid in board["rotation"]:
+		if MissionDefs.TASKS.has(tid):
+			var def: Dictionary = MissionDefs.TASKS[tid]
+			result.append({"id": tid, "layer": "rotation", "def": def,
+				"cooldown": false, "cd_remain": 0.0})
+	return result
+
+
+## 结算后设置常驻冷却(§5.8: 时长 × 1.5)
+func _set_cooldown(task_id: String) -> void:
+	if task_id in MissionDefs.RESIDENT_TASKS:
+		var def: Dictionary = MissionDefs.TASKS[task_id]
+		board["resident_cd"][task_id] = _now() + float(def["dur_sec"]) * MissionDefs.COOLDOWN_MULT
+
+
+# ═══════════════════════════════════════════════════
+# M2: 战报富化(KILLREPORT 数据准备)
+# ═══════════════════════════════════════════════════
+
+func _build_killreport(mid: String, mis: Dictionary, def: Dictionary,
+		success: bool, cid: String) -> Dictionary:
+	var report := {
+		"mission_id": mid, "task_id": mis["task_id"],
+		"task": def["name"], "success": success,
+		"seed": int(mis["seed"]), "duration": float(mis["dur"]),
+		"timestamp": _now(),
+	}
+	# 参战方
+	var members: Array[Dictionary] = []
+	var cap: Dictionary = captains.get(cid, {})
+	members.append({"name": cap.get("name", "?"), "role": "队长",
+		"ship": "旗舰", "damage": 0, "final_blow": true})
+	var ship_count: int = teams.get(mis["team_id"], {}).get("ship_uids", []).size()
+	for i in range(ship_count - 1):
+		members.append({"name": "僚机 %d" % (i + 1), "role": "队员",
+			"ship": "护卫", "damage": 0, "final_blow": false})
+	report["members"] = members
+	# 受害者(按任务类型)
+	report["victim"] = {"name": _victim_name(def), "ship": _victim_ship(def),
+		"corporation": _victim_corp(def)}
+	# 掉落清单
+	if success:
+		report["loot"] = _roll_loot(mid, mis, def)
+	else:
+		report["loot"] = {"destroyed": [], "dropped": []}
+	return report
+
+
+func _victim_name(def: Dictionary) -> String:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = int(_now()) ^ hash(def["name"])
+	return MissionDefs.NICKS[rng.randi_range(0, MissionDefs.NICKS.size() - 1)]
+
+
+func _victim_ship(def: Dictionary) -> String:
+	match def["kind"]:
+		"combat": return "劫掠者级快船"
+		"survey", "signal": return "深空探测器"
+		"salvage": return "废弃船体"
+		"escort": return "科考船"
+		_: return "未知目标"
+
+
+func _victim_corp(def: Dictionary) -> String:
+	match def["kind"]:
+		"combat": return "开拓地私掠团"
+		"salvage": return "深空打捞协会"
+		_: return "深空探索协会"
+
+
+func _roll_loot(mid: String, mis: Dictionary, def: Dictionary) -> Dictionary:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = int(mis["seed"]) + 1   # 不同掷骰位置
+	var destroyed: Array[Dictionary] = []
+	var dropped: Array[Dictionary] = []
+	# 远征材料(§15.3: 类型由任务类型决定, 数量由难度)
+	var mat_id: String = MissionDefs.drop_material(def["kind"])
+	var mat_label: String = MissionDefs.EXP_MATERIALS.get(mat_id, {}).get("label", mat_id)
+	var diff: String = def["diff"]
+	var mat_qty: int = {"D1": 1, "D2": 2, "D3": 3, "D4": 4}.get(diff, 1)
+	if mat_qty > 0:
+		dropped.append({"id": mat_id, "label": mat_label, "qty": mat_qty, "slot": "货舱"})
+		inventory[mat_id] = int(inventory.get(mat_id, 0)) + mat_qty
+	# 蓝图碎片(30-60% 概率, §5.5)
+	var frag_p: float = {"D1": 0.30, "D2": 0.40, "D3": 0.50, "D4": 0.60}.get(diff, 0.30)
+	if rng.randf() < frag_p:
+		dropped.append({"id": "frag_generic", "label": "蓝图碎片", "qty": 1, "slot": "货舱"})
+		inventory["frag_generic"] = int(inventory.get("frag_generic", 0)) + 1
+	# 焚毁物(战斗类)
+	if def["kind"] == "combat":
+		destroyed.append({"id": "pirate_mod", "label": "海盗改装火控", "qty": 1, "slot": "高槽"})
+	return {"destroyed": destroyed, "dropped": dropped}
 
 
 # ── 对外只读 ──
-func is_ship_on_mission(_ship_uid: String) -> bool:
-	return false   # M1 无舰船实例; M2 舰船名册落地后接任务锁
-
 
 func last_report() -> Dictionary:
 	return _last_report
