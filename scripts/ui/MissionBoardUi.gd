@@ -23,11 +23,12 @@ var _report_lab: RichTextLabel
 func _ready() -> void:
 	visible = false
 	custom_minimum_size = Vector2(560, 0)
-	# 靠右锚定, 避开左上 HUD(验收 P2-1)
-	set_anchors_preset(Control.PRESET_CENTER_RIGHT)
+	# 靠右上锚定, 避开左上 HUD(验收 P2-1); 顶部 60 起防越界(复验 P2)
+	set_anchors_preset(Control.PRESET_TOP_RIGHT)
 	offset_left = -580
 	offset_top = 60
 	offset_right = -20
+	offset_bottom = 60
 	add_theme_stylebox_override("panel", _box(PANEL_BG))
 	_build()
 
