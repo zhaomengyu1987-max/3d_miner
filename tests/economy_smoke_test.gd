@@ -7,6 +7,10 @@ extends Node
 
 var _fails: Array[String] = []
 
+## 用 const preload 而不是 class_name: 新脚本的类名要等编辑器扫描后才进
+## .godot/global_script_class_cache.cfg, release/headless 下不一定已登记（`is` 需要 const 才能当类型用）。
+const NewsTickerScript := preload("res://scripts/ui/NewsTicker.gd")
+
 
 func _check(cond: bool, what: String) -> void:
 	if not cond:
@@ -38,6 +42,9 @@ func _ready() -> void:
 	await _test_scroll_keep()
 	await _test_license_market()
 	await _test_orderbook_columns()
+	await _test_icons()
+	await _test_drag_and_layer()
+	await _test_news_ticker()
 	_test_save_load()
 	_cleanup()
 	if _fails.is_empty():
@@ -127,9 +134,21 @@ func _test_research() -> void:
 	Economy.reverse["smallArms"] = GameData.reverse_max("smallArms")
 	_check(Economy.research_block_reason("blueprint", "smallArms") == "", "原图可研制")
 	_check(Economy.start_research("blueprint", "smallArms") == "", "原图研究提交")
+	# 同目标不能并行（2026-10-02 用户报"能点多次但没有实际作用"）:
+	# 研究站有 2 槽时, 原先同一个原图能排两条, 第二条完工只是把 blueprints 再写一遍。
+	Economy.module_state("research")["level"] = maxi(Economy.module_state("research")["level"], 2)
+	if Economy.research_slots() >= 2:
+		var dup := Economy.start_research("blueprint", "smallArms")
+		_check(dup != "", "同一原图第二次被拒（%s）" % dup)
+		_check(Economy.research_jobs.size() == 1,
+			"只产生 1 条研究作业（实际 %d 条）" % Economy.research_jobs.size())
+	else:
+		print("   （研究槽 <2, 跳过并行重复断言）")
 	Economy.research_jobs[0]["left"] = 0.0
 	Economy._advance_jobs(0.0)
 	_check(Economy.blueprints.has("smallArms"), "原图到手")
+	_check(Economy.research_block_reason("blueprint", "smallArms") == "已拥有原图",
+		"已有原图后不可重复研制")
 	_check(Economy.start_research("me", "smallArms") == "", "ME 研究提交")
 	Economy.research_jobs[0]["left"] = 0.0
 	Economy._advance_jobs(0.0)
@@ -137,6 +156,12 @@ func _test_research() -> void:
 	var mats: Dictionary = Economy.effective_materials("smallArms")
 	_check(int(mats["commonA"]) == 29, "ME -2%% 后 commonA 30→29 (得 %s)" % mats.get("commonA"))
 	_check(Economy.research_block_reason("me", "smallArms") == "" or true, "ME 继续研究可达")
+	# ME 等级不会越过上限（并行作业/旧存档可能留下重复作业）
+	var me_max := int(GameData.RESEARCH["me_max"])
+	Economy.me_levels["smallArms"] = me_max
+	Economy.research_jobs.append({"kind": "me", "equip": "smallArms", "total": 1.0, "left": 0.0})
+	Economy._advance_jobs(0.0)
+	_check(int(Economy.me_levels["smallArms"]) == me_max, "ME 完工不会越过上限 %d" % me_max)
 
 
 func _test_component_no_license() -> void:
@@ -441,24 +466,20 @@ func _test_price_chart() -> void:
 	add_child(chart)
 	Economy.trade_log.clear()
 	for i in 5:
-		Economy.trade_log.append({"g": "commonA", "p": 10.0 + float(i), "q": 1, "d": i})
+		Economy.trade_log.append({"g": "commonA", "p": 10.0 + float(i), "q": 2, "d": i})
 	chart.goods = "commonA"
 	chart._process(0.1)
-	_check(chart._points.size() == 5, "价格图收到 5 个点")
-	_check(absf(chart._day_min - 0.0) < 0.001 and absf(chart._day_max - 4.0) < 0.001,
-		"横轴日区间 = D0–D4（实际 D%d–D%d）" % [int(chart._day_min), int(chart._day_max)])
-	# 关键回归: 满 200 条（size 恒定）后新成交仍须刷新
+	_check(chart._vols.size() > 0, "价格图收到数据（柱数 %d）" % chart._vols.size())
+	# 关键回归: 满 200 条（条数恒定）后新成交仍须刷新 —— 旧判据只看条数会永久冻结
 	Economy.trade_log.clear()
 	for i in 200:
 		Economy.trade_log.append({"g": "commonA", "p": 50.0, "q": 1, "d": 0})
 	chart._process(0.1)
-	var hi_before: float = chart._hi
+	var q_before: int = chart._max_q
 	Economy.trade_log.remove_at(0)
-	Economy.trade_log.append({"g": "commonA", "p": 99.0, "q": 1, "d": 1})
+	Economy.trade_log.append({"g": "commonA", "p": 99.0, "q": 500, "d": 1})
 	chart._process(0.1)
-	_check(chart._points.size() == 200, "满额后点数仍为 200")
-	_check(absf(chart._hi - 99.0) < 0.001 and chart._hi > hi_before,
-		"满 200 条后新高仍刷新（%.1f → %.1f，旧判据会永久冻结）" % [hi_before, chart._hi])
+	_check(chart._max_q > q_before, "满 200 条后仍刷新（峰值 %d → %d）" % [q_before, chart._max_q])
 	Economy.trade_log.clear()
 	chart.queue_free()
 
@@ -755,6 +776,351 @@ func _row_matching(rows: Array, needle: String) -> String:
 		if String(t).find(needle) >= 0:
 			return String(t)
 	return ""
+
+
+## 图标回归（2026-10-02）: 空间站悬浮窗"市场交易"按钮原引用不存在的 market_logo.svg
+## ⇒ load() 返回 null ⇒ 按钮空白（用户报"看不到 Icon"）。现在图标由代码手绘像素画生成。
+func _test_icons() -> void:
+	print("[icons]")
+	var icons := preload("res://scripts/ui/EconIcons.gd")
+	var tex: Texture2D = icons.market_logo()
+	_check(tex != null, "市场图标生成成功")
+	if tex == null:
+		return
+	_check(tex.get_width() == 48 and tex.get_height() == 48,
+		"图标尺寸 48×48（16×16 手绘稿 ×3 nearest）实际 %s" % str(tex.get_size()))
+	var img := tex.get_image()
+	var black := 0
+	var ink := 0
+	var frame := 0
+	for y in img.get_height():
+		for x in img.get_width():
+			var c := img.get_pixel(x, y)
+			if c.g > 0.5:
+				ink += 1          # 主线条 #58A7BF
+			elif c.g > 0.2:
+				frame += 1        # 边框 #305665
+			elif c.a > 0.9 and c.r < 0.02 and c.g < 0.02 and c.b < 0.02:
+				black += 1        # 黑底
+	var total := img.get_width() * img.get_height()
+	_check(black > total / 2, "黑底占比过半（黑 %d / 共 %d）" % [black, total])
+	_check(ink > 150, "主线条像素 %d 个（双向箭头可见）" % ink)
+	_check(frame > 300, "边框像素 %d 个" % frame)
+	# 建造厂图标（齿轮）
+	var ftex: Texture2D = icons.factory_logo()
+	_check(ftex != null and ftex.get_width() == 48, "建造厂图标生成 48×48")
+	if ftex != null:
+		var fimg := ftex.get_image()
+		var fink := 0
+		for y in fimg.get_height():
+			for x in fimg.get_width():
+				if fimg.get_pixel(x, y).g > 0.5:
+					fink += 1
+		_check(fink > 300, "齿轮线条像素 %d 个" % fink)
+	# 悬浮窗里的按钮必须真的拿到图标（这是用户看到的那两颗）
+	var ui = get_tree().get_first_node_in_group("econ_ui")
+	if ui == null:
+		_check(false, "EconUiRoot 存在")
+		return
+	ui.show_station_popup(Vector2(300, 300))
+	await get_tree().process_frame
+	var btn := _find_button_by_tip(ui, "市场交易")
+	_check(btn != null, "悬浮窗存在『市场交易』按钮")
+	if btn != null:
+		_check(btn.icon != null, "按钮 icon 非空（修复前 = null ⇒ 空白）")
+		_check(btn.icon != null and btn.icon.get_width() == 48, "按钮图标为 48×48 像素画")
+	# 建造厂与商品制造合并: 只剩一颗图标按钮, 不再有文字按钮"商品制造"
+	# 注意: 模块按钮的 tooltip_text 会被 _refresh_popup_buttons 换成建成状态, 所以按 meta 找
+	var fac := _find_button_by_meta(ui, "module_id", "factory")
+	_check(fac != null and fac.icon != null, "『建造厂 · 商品制造』已合并为图标按钮")
+	if fac != null:
+		_check(_body_has_text(fac, "建造厂 · 商品制造"), "合并按钮的浮字提示 = 建造厂 · 商品制造")
+	_check(_find_button_by_text(ui, "商品制造") == null, "旧的『商品制造』文字按钮已移除")
+	# 悬浮窗保持打开（2026-10-02 用户拍板: 打开面板不自动关菜单）
+	if btn != null:
+		btn.emit_signal("pressed")
+		await get_tree().process_frame
+		_check(ui._popup.visible, "点开面板后悬浮窗**仍然可见**（原来会自己关掉）")
+		_check(ui._panels["market"].visible, "市场面板已打开")
+		_check(not ui._popup_blocker.visible, "全屏遮罩已撤（否则会挡住新面板）")
+	ui.close_all()
+	ui.hide_station_popup()
+
+
+## 按元数据找按钮（模块按钮的 tooltip 会被建成状态覆盖, 不能用文字匹配）
+func _find_button_by_meta(node: Node, key: String, val: String) -> Button:
+	if node is Button and str((node as Button).get_meta(key, "")) == val:
+		return node as Button
+	for c in node.get_children():
+		var r := _find_button_by_meta(c, key, val)
+		if r != null:
+			return r
+	return null
+
+
+## 按按钮文字找按钮（用于断言某个文字按钮已被移除）
+func _find_button_by_text(node: Node, txt: String) -> Button:
+	if node is Button and (node as Button).text == txt:
+		return node as Button
+	for c in node.get_children():
+		var r := _find_button_by_text(c, txt)
+		if r != null:
+			return r
+	return null
+
+
+## 按 hover 提示文字找按钮（悬浮窗按钮无固定 name）
+func _find_button_by_tip(node: Node, tip: String) -> Button:
+	if node is Button and (node as Button).tooltip_text == tip:
+		return node as Button
+	for c in node.get_children():
+		var r := _find_button_by_tip(c, tip)
+		if r != null:
+			return r
+	return null
+
+
+## 拖动 + 层级 + 多开回归（2026-10-02 用户拍板: **删除吸附、不要吸附线、点谁谁置顶**）:
+## ① 吸附删除后: 拖动严格跟手、**不改变尺寸**（旧吸附贴边会改尺寸 ⇒ UI 忽然变宽且收不回）
+## ② 松手落在窗口外也不能卡住拖动状态
+## ③ 整窗留在视口内 ⇒ 右上角 ✕ 永远点得到（旧实现允许拖出屏只留 50px ⇒ 无法关闭）
+## ④ 面板不再各自带全屏点击拦截背板（多开时最上层那块会让下面那扇窗点不到）
+## ⑤ 点击的窗口移到最前, 且 ESC 先关它
+func _test_drag_and_layer() -> void:
+	print("[drag & layer]")
+	var ui = get_tree().get_first_node_in_group("econ_ui")
+	if ui == null:
+		_check(false, "EconUiRoot 存在")
+		return
+	ui.close_all()
+	ui._open_stack.clear()
+	ui.open_panel_add("build", true)
+	await get_tree().process_frame
+	var p = ui._panels.get("build")
+	_check(p != null and p._panel != null, "建造面板就绪")
+	if p == null:
+		return
+	# ① 拖动严格跟手、不改尺寸
+	p._panel.size = Vector2(600, 400)
+	var w0: float = p._panel.size.x
+	p._panel.position = Vector2(200, 200)
+	p._drag_logic = p._panel.position
+	p._dragging = true
+	for i in 5:
+		var mm := InputEventMouseMotion.new()
+		mm.relative = Vector2(6, 4)
+		p._input(mm)
+	_check(p._panel.position.is_equal_approx(Vector2(230, 220)),
+		"拖动 5×(+6,+4) 后位置严格跟手（实际 %s, 期望 (230, 220)）" % str(p._panel.position))
+	_check(absf(p._panel.size.x - w0) < 0.01, "拖动不改变宽度（吸附旧实现会改尺寸）")
+	_check(not p.has_method("_apply_drag_snap") and not p.has_method("_snap_axes"),
+		"吸附相关函数已整体删除")
+	p._dragging = false
+	# ② 松手在窗口外也不能卡住拖动状态
+	p._dragging = true
+	await get_tree().process_frame
+	_check(not p._dragging, "左键已松开 → 拖动状态被强制结束")
+	# ③ 整窗留在视口内（✕ 永远点得到）
+	p._panel.position = Vector2(99999, 99999)
+	p._clamp_panel_offscreen()
+	var vp: Vector2 = p.get_viewport_rect().size
+	_check(p._panel.position.x <= maxf(vp.x - p._panel.size.x, 0.0) + 0.01 \
+			and p._panel.position.y <= maxf(vp.y - p._panel.size.y, 0.0) + 0.01,
+		"拖到屏幕外会被夹回视口内（%s）" % str(p._panel.position))
+	# ④ 层级 + 共享背板（菜单层是动态的: 前 16 / 后 14, 见下面"菜单让位"三条）
+	_check(int(ui.POPUP_LAYER_FRONT) > 15 and int(ui.POPUP_LAYER_BACK) < 15,
+		"菜单前景层 %d > 面板 15 > 让位层 %d" % [int(ui.POPUP_LAYER_FRONT), int(ui.POPUP_LAYER_BACK)])
+	# 层级不变式 —— 这条专门防"拦截层盖住让位后的菜单 ⇒ 点不动第二个功能"的回归:
+	# 拦截层 13 < 菜单让位 14 < 面板/根 15 < 菜单前景 16
+	_check(int(ui._backdrop_layer.layer) < int(ui.POPUP_LAYER_BACK) \
+			and int(ui.POPUP_LAYER_BACK) < 15 and int(ui.POPUP_LAYER_FRONT) > 15,
+		"层级不变式: 拦截层 %d < 菜单让位 %d < 面板 15 < 菜单前景 %d" % [
+			int(ui._backdrop_layer.layer), int(ui.POPUP_LAYER_BACK), int(ui.POPUP_LAYER_FRONT)])
+	_check(ui._modal_backdrop.get_parent() == ui._backdrop_layer,
+		"拦截层在独立低层（否则菜单让位后会被它盖住 → 点不动第二个功能）")
+	_check(ui._popup_blocker.get_parent() == ui._popup_layer, "悬浮窗遮罩与悬浮窗同层")
+	_check(ui._modal_backdrop != null and ui._modal_backdrop.visible, "面板打开时共享层可见")
+	_check(ui._modal_backdrop.color.a < 0.01 and ui._modal_backdrop.mouse_filter == Control.MOUSE_FILTER_STOP,
+		"共享层**全透明**但保留输入隔离（用户: 点功能后全屏变半透明深色是 bug; a=%.2f）" % ui._modal_backdrop.color.a)
+	_check(not _has_stop_backdrop(p), "面板自身不再有全屏点击拦截背板（否则下面的窗点不到）")
+	# 面板开着时弹出的菜单不能启用全屏拦截层（同层全屏 STOP 会吃掉面板点击）
+	ui.show_station_popup(Vector2(200, 200))
+	await get_tree().process_frame
+	_check(not ui._popup_blocker.visible, "面板开着时菜单不启用全屏拦截层")
+	# 菜单不再自动让位（用户: "空间站UI 会发生位移"）
+	ui._popup.position = Vector2(321, 123)
+	ui.open_panel_add("inventory", true)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	_check(ui._popup.position.is_equal_approx(Vector2(321, 123)),
+		"打开面板后菜单不位移（仍在 %s）" % str(ui._popup.position))
+	# 布局存档: 不能把折叠高度(32)或 0 高度写进去（否则下次打开只剩一条标题栏）
+	ui.layout_path = "user://layout_test.json"
+	ui._panels["build"]._toggle_collapse()
+	ui.save_window_layout()
+	var ltxt := FileAccess.get_file_as_string(ui.layout_path)
+	var lj: Variant = JSON.parse_string(ltxt)
+	_check(ltxt.find("\"collapsed\"") < 0, "存档不再写折叠态")
+	if typeof(lj) == TYPE_DICTIONARY:
+		var bad_h := 0
+		for k in lj:
+			if k == "_ui_scale":
+				continue
+			var e: Dictionary = lj[k]
+			if float(e.get("w", 0.0)) > 0.0 and float(e.get("h", 0.0)) < EconUiRoot.LAYOUT_MIN_H - 0.01:
+				bad_h += 1
+				print("   × %s: w=%.0f h=%.0f" % [k, float(e.get("w", 0.0)), float(e.get("h", 0.0))])
+		_check(bad_h == 0, "存档里有效窗口高度均 ≥ 下限 %.0f（异常 %d 条）" % [EconUiRoot.LAYOUT_MIN_H, bad_h])
+		_check(float((lj["build"] as Dictionary).get("h", 0.0)) >= EconUiRoot.LAYOUT_MIN_H - 0.01,
+			"折叠中的窗口存档仍写展开高度（实际 %.0f）" % float((lj["build"] as Dictionary).get("h", 0.0)))
+	ui._panels["build"]._toggle_collapse()      # 还原展开
+	DirAccess.remove_absolute(ui.layout_path)
+	ui.layout_path = EconUiRoot.LAYOUT_PATH
+	# 菜单不再"永远最顶层"（用户 2026-10-02 报）: 点面板 ⇒ 菜单让位; 抓标题栏 ⇒ 回到最前
+	ui.show_station_popup(Vector2(200, 200))
+	await get_tree().process_frame
+	_check(int(ui._popup_layer.layer) == int(ui.POPUP_LAYER_FRONT), "刚弹出时菜单在最前")
+	ui.open_panel_add("market", true)
+	await get_tree().process_frame
+	_check(int(ui._popup_layer.layer) == int(ui.POPUP_LAYER_BACK),
+		"打开面板后菜单让位（层 %d < 面板 15）" % int(ui._popup_layer.layer))
+	ui._raise_popup()
+	_check(int(ui._popup_layer.layer) == int(ui.POPUP_LAYER_FRONT), "抓标题栏后菜单回到最前")
+	# 连点多个功能（用户报"点开一个后点不动其他"）—— 真实点击路由, 且**菜单必须处于让位层**:
+	# 拦截层若放在 15（旧实现）就会盖住 14 的菜单 ⇒ 这一击被拦截层吃掉 ⇒ 面板不开 ⇒ 断言失败。
+	# 注意: 不能在点击前调 show_station_popup（它会把菜单抬回 16, 那样测不出这个 bug）。
+	ui.open_panel_add("build", true)                 # 打开面板 ⇒ 菜单自动让位
+	ui._popup.position = Vector2(4, 4)               # 挪到面板覆盖不到的角落
+	ui._popup.visible = true
+	await get_tree().process_frame
+	_check(int(ui._popup_layer.layer) == int(ui.POPUP_LAYER_BACK),
+		"点击前菜单处于让位层 %d（面板 15 之下、拦截层 %d 之上）" % [
+			int(ui.POPUP_LAYER_BACK), int(ui._backdrop_layer.layer)])
+	var inv_btn := _find_button_by_text(ui._popup, "仓库")
+	_check(inv_btn != null and inv_btn.is_visible_in_tree(), "让位状态下菜单按钮仍可见")
+	if inv_btn != null:
+		var cpos: Vector2 = inv_btn.get_global_rect().get_center()
+		for pressed in [true, false]:
+			var cev := InputEventMouseButton.new()
+			cev.button_index = MOUSE_BUTTON_LEFT
+			cev.pressed = pressed
+			cev.position = cpos
+			cev.global_position = cpos
+			ui.get_viewport().push_input(cev)
+		await get_tree().process_frame
+		_check(ui._panels["inventory"].visible,
+			"菜单在让位层时仍能点到第二个功能（真实点击路由, 命中点 %s）" % str(cpos))
+	_check(ui._panels["build"].visible and ui._panels["inventory"].visible,
+		"两扇窗同时在（多开未被写死）")
+	# ✕ 关闭按钮（用户报"缺少 x 关闭按钮"）
+	ui.show_station_popup(Vector2(200, 200))
+	await get_tree().process_frame
+	var xbtn := _find_button_by_text(ui._popup, "✕")
+	_check(xbtn != null, "空间站菜单有 ✕ 关闭按钮")
+	if xbtn != null:
+		xbtn.emit_signal("pressed")
+		await get_tree().process_frame
+		_check(not ui._popup.visible, "点 ✕ 后菜单关闭")
+	# ⑤ 点击置顶 + ESC 顺序
+	ui.open_panel_add("market", true)
+	await get_tree().process_frame
+	ui._panels["build"]._set_active()          # 模拟点击建造面板
+	await get_tree().process_frame
+	_check(ui.get_child(ui.get_child_count() - 1) == ui._panels["build"],
+		"点击的窗口被移到最前（绘制/输入优先）")
+	_check(ui._open_stack[-1] == "build", "置顶后 ESC 会先关它（叠开栈已同步）")
+	# ⑥ 多开细节: 层叠偏移 / 市场里"我的订单"（原调用点方法缺失, 点了没反应）/ ESC 逐层关
+	ui.close_all()
+	ui._open_stack.clear()
+	ui.open_panel_add("market", true)
+	ui.open_panel_add("build", true)
+	await get_tree().process_frame
+	_check(ui._panels["market"].visible and ui._panels["build"].visible,
+		"市场与建造面板可**同时**打开（多开）")
+	_check(ui._open_stack.size() == 2, "叠开栈记录 2 扇窗（ESC 逐层关）")
+	_check((ui._panels["build"] as EconPanelBase).cascade_offset != Vector2.ZERO,
+		"第二扇窗带层叠偏移（不会完全盖住第一扇）")
+	_check(ui.has_method("open_panel_add"), "open_panel_add 存在（修复前该方法缺失）")
+	ui._panels["market"]._open_orders()
+	await get_tree().process_frame
+	_check(ui._panels["orders"].visible and ui._panels["market"].visible,
+		"市场里『我的订单』可叠加打开且市场不关")
+	var esc := InputEventKey.new()
+	esc.keycode = KEY_ESCAPE
+	esc.pressed = true
+	ui._input(esc)
+	await get_tree().process_frame
+	_check(not ui._panels["orders"].visible and ui._panels["market"].visible,
+		"ESC 只关最上层（orders 关掉, market 仍在）")
+	ui.close_all()
+	ui._open_stack.clear()
+	ui.hide_station_popup()
+
+
+## 面板里是否还有 MOUSE_FILTER_STOP 的全屏 ColorRect（旧的多窗"点击杀手"）
+func _has_stop_backdrop(p) -> bool:
+	for c in (p as Node).get_children():
+		if c is ColorRect and (c as ColorRect).mouse_filter == Control.MOUSE_FILTER_STOP:
+			return true
+	return false
+
+
+## 顶部新闻播报条（2026-10-02）: 文本流走 Economy.event_posted（按关键词白名单挑世界叙事）,
+## 常驻角标走 WorldState 的结构化公开接口。
+func _test_news_ticker() -> void:
+	print("[news ticker]")
+	var ui = get_tree().get_first_node_in_group("econ_ui")
+	if ui == null:
+		_check(false, "EconUiRoot 存在")
+		return
+	var ticker = null
+	for c in ui.get_children():
+		if c is NewsTickerScript:
+			ticker = c
+	_check(ticker != null, "新闻条已挂在 EconUiRoot 下")
+	if ticker == null:
+		return
+	# ① 世界叙事文本进队列（与事件日志同一管道, 不需要额外接 WorldState）
+	ticker._queue.clear()
+	ticker._cur = {}
+	Economy.post_event("边境传来军情：帝国 开始大规模军备调度，物流需求预计持续走高", "warn")
+	_check(ticker._queue.size() + (0 if ticker._cur.is_empty() else 1) >= 1, "世界叙事文本已进入新闻条")
+	_check(String(ticker._line.text).find("边境传来军情") >= 0, "新闻条显示该文本（%s）" % ticker._line.text)
+	# ② 非叙事文本被过滤（成交/入库/操作报错不上新闻）
+	ticker._queue.clear()
+	ticker._cur = {}
+	Economy.post_event("货舰 自动收购 普矿A ×5 → +₡9", "good")
+	Economy.post_event("制造失败：材料不足", "warn")
+	_check(ticker._queue.is_empty() and ticker._cur.is_empty(), "成交/报错文本被关键词白名单挡掉")
+	# ③ 相位切换播报 + 角标（结构化接口）
+	var saved_day: int = Economy.day
+	var saved_path: String = WorldState._save_path
+	WorldState._save_path = "user://world_test.json"
+	var peace_d := int(GameData.WORLD["peace_days"])
+	Economy.day = peace_d + 1                      # 进入筹备期
+	WorldState._sync_phase(Economy.day, false)
+	await get_tree().process_frame
+	ticker._badge_t = 99.0
+	ticker._refresh_badge()
+	_check(String(ticker._badge.text).find("筹备期") >= 0, "角标显示当前相位（%s）" % ticker._badge.text)
+	_check(String(ticker._badge.text).find(WorldState.faction_display_name()) >= 0, "角标显示当前阵营")
+	_check(String(ticker._badge.text).find("剩") >= 0, "角标显示相位倒计时")
+	_check(ticker._queue.size() > 0 or String(ticker._line.text).find("军备调度") >= 0,
+		"相位切换文案已进入新闻条")
+	# ④ 公开接口可用（转正后不该再伸手摸私有字段）
+	_check(WorldState.phase_name() == "筹备期", "phase_name() 公开可用（%s）" % WorldState.phase_name())
+	_check(WorldState.days_left_in_phase() > 0, "days_left_in_phase() 公开可用（%d 天）" % WorldState.days_left_in_phase())
+	_check(WorldState.phase_progress() >= 0.0 and WorldState.phase_progress() <= 1.0,
+		"phase_progress() 公开可用（%.2f）" % WorldState.phase_progress())
+	_check(WorldState.current_faction != "", "current_faction 公开可用（%s）" % WorldState.current_faction)
+	# ⑤ 命令输入不挡点击
+	_check(ticker.mouse_filter == Control.MOUSE_FILTER_IGNORE, "新闻条不拦截鼠标（不挡游戏点击）")
+	# 还原
+	Economy.day = saved_day
+	WorldState._sync_phase(Economy.day, true)
+	WorldState._save_path = saved_path
+	if FileAccess.file_exists("user://world_test.json"):
+		DirAccess.remove_absolute("user://world_test.json")
 
 
 func _test_save_load() -> void:

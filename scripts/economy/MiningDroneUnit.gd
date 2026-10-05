@@ -10,7 +10,7 @@ extends Node3D
 enum State { IDLE, TO_ORE, ESCORT, RETURN }
 
 const DroneScene := preload("res://sences/MiningDrone.tscn")
-const DRONE_SIZE := 0.9                       # 目标最大边(米)
+const DRONE_SIZE := 4.5                       # 目标最大边(米) [2026-10-03 拍板: ×5]
 const HULL_COLOR := Color(0.5, 0.62, 0.66)    # 无材质低模的机壳色
 const DEBUG_SCALE := 50.0                     # debug_instant 时速度×50（headless 测试）
 const RETRY_S := 1.0                          # 池内暂无目标时的重试间隔
@@ -68,10 +68,12 @@ func _process(delta: float) -> void:
 			if _target == null or not is_instance_valid(_target) or not _target.visible:
 				_forget_target()
 				_try_immediate()
-			elif is_instance_valid(_target):
-				var d := _target.global_position - global_position
-				if d.length() > 0.5:
-					global_position += d.normalized() * _speed() * 3.0 * delta
+			elif is_instance_valid(_target) and station != null and is_instance_valid(station):
+				# 平滑护航: 锚点=拖拽线侧后方, 距离随矿+舰尺寸自适应(防扎进被拖矿)
+				var tow_dir := (station.global_position - _target.global_position).normalized()
+				var anchor := _target.global_position - tow_dir * (_target.body_radius() + DRONE_SIZE * 0.5 + 0.3) + Vector3(0.0, 0.6, 0.0)
+				global_position = global_position.move_toward(anchor, _speed() * 3.0 * delta)
+				look_at(_target.global_position, Vector3.UP)
 		State.RETURN:
 			var home := park_pos - global_position
 			if home.length() <= 0.2:

@@ -127,6 +127,11 @@ func mine_units(u: int) -> void:
 	amount = maxi(amount - u, 0)
 
 
+## 碰撞球半径(米) = 归一化后的视觉尺寸一半; 供接近/环绕距离计算
+func body_radius() -> float:
+	return _sphere.radius
+
+
 func start_capture(target: Node3D, p_speed: float, spin: float) -> void:
 	captured = true
 	pull_target = target
@@ -136,6 +141,9 @@ func start_capture(target: Node3D, p_speed: float, spin: float) -> void:
 	angular_velocity = spin_axis * spin
 	_spin_recover_time = 0.0
 
+	# 捕获/拖潜中关闭碰撞: 速度逐帧被牵引覆盖, 与矿群接触冲量互相打架 = 拖潝卡顿根源
+	collision_layer = 0
+	collision_mask = 0
 
 ## recover_time > 0 时自转在此时长内从捕获速度线性回落到漂移速度; 0 = 立即恢复
 func stop_capture(recover_time := 0.0) -> void:
@@ -154,16 +162,16 @@ func stop_capture(recover_time := 0.0) -> void:
 func set_drifting(on: bool) -> void:
 	visible = on
 	freeze = not on  # 池中矿冻结: 零模拟开销
-	collision_layer = 1 if on else 0  # 回收矿不挡活矿
-	collision_mask = collision_layer
-	if on:
-		linear_velocity = velocity
-		angular_velocity = spin_axis * spin_speed
-	else:
+	if not on:
 		if _hover:
 			_on_hover(false)  # 回收时若正被悬停, 清描边与提示
 		auto_towed = false
 		stop_capture()
+	collision_layer = 1 if on else 0  # 回收矿不挡活矿(在清捕获态之后设置, 防被覆盖回 1)
+	collision_mask = collision_layer
+	if on:
+		linear_velocity = velocity
+		angular_velocity = spin_axis * spin_speed
 
 
 func _physics_process(delta: float) -> void:

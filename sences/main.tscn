@@ -1,12 +1,12 @@
 [gd_scene format=3 uid="uid://cekd7d8adtwrp"]
 
 [ext_resource type="Script" uid="uid://vakct7b1y8go" path="res://scripts/MiningCamera2.gd" id="1_r4dii"]
-[ext_resource type="PackedScene" path="res://sences/StationRig.tscn" id="2_1j6d1"]
+[ext_resource type="PackedScene" uid="uid://chg2t1nsvf33u" path="res://sences/StationRig.tscn" id="2_1j6d1"]
 [ext_resource type="PackedScene" path="res://sences/BeltFlow.tscn" id="4_40i81"]
 [ext_resource type="PackedScene" uid="uid://dpfwiuvtl4uy" path="res://sences/planetSurface.tscn" id="5_mqxhw"]
 [ext_resource type="PackedScene" path="res://sences/IceFlow.tscn" id="6_3dblt"]
 [ext_resource type="Script" uid="uid://c18f8u1qkfd20" path="res://scripts/dev/TimeWarp.gd" id="7_timewarp"]
-[ext_resource type="Script" path="res://scripts/dev/DebugViz.gd" id="8_dbgviz"]
+[ext_resource type="Script" uid="uid://cnvsyo4d6v0mx" path="res://scripts/dev/DebugViz.gd" id="8_dbgviz"]
 
 [sub_resource type="Environment" id="Environment_jq8tk"]
 background_energy_multiplier = 0.0
@@ -90,5 +90,5 @@ omni_attenuation = 0.05
 [node name="TimeWarp" type="Node" parent="." unique_id=1419856581]
 script = ExtResource("7_timewarp")
 
-[node name="DebugViz" type="Node3D" parent="."]
+[node name="DebugViz" type="Node3D" parent="." unique_id=409750846]
 script = ExtResource("8_dbgviz")

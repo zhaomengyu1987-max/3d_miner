@@ -2,9 +2,9 @@ class_name EconPanelBase
 extends Control
 
 ## EVE 窗口系统复刻（行为规格取自国服客户端 code.ccp → carbonui/window/*.pyj）：
-## - 标题栏拖动：拖动中显示吸附边线（吸附视口边缘+其他窗口边缘, SNAP_DISTANCE=8px）
+## - 标题栏拖动：纯增量跟随（吸附功能已于 2026-10-02 按用户要求整体删除）
 ## - 折叠：○/□ 指示钮单击 / 双击标题, 保宽度, 高度收成标题条（带 0.15s 动画）
-## - 缩放：四边+右下拖角（EVE edge/corner 贴图）, 缩放中同样吸附, 最小尺寸强制
+## - 缩放：四边+右下拖角（EVE edge/corner 贴图）, 最小尺寸强制, 整窗留在视口内
 ## - 防出屏：标题栏至少保留 OFFSCREEN_KEEP 像素可见（AdjustWindowPositionToFitScreen）
 ## - 活动窗口染色（only_tint_active_window）：非活动窗口轻微变暗
 ## - 布局持久化：位置/尺寸/折叠/缩放档位
@@ -17,7 +17,6 @@ const HEADER_CLOSED_TEX := preload("res://assets/ui/window_header_closed_16px.pn
 # —— EVE 行为常量（carbonui/window 规格） ——
 const HEADER_HEIGHT := 30.0
 const COLLAPSED_HEIGHT := 32.0   # EVE 源码 WindowHeaderBase.COLLAPSED_HEIGHT=32
-const SNAP_DISTANCE := 16.0  # EVE 源码 snap.SNAP_DISTANCE=16
 const EDGE_HOT := 8.0             # EVE 源码 ResizeHandle size=8 命中热区（视觉厚度仅 1px）
 const MIN_WIN := Vector2(160, 120)
 const COLLAPSE_ANIM := 0.15
@@ -36,8 +35,6 @@ var _ticker_box: Control
 var _ticker_label: Label
 var _edge_zone: Control                    # 隐形边缘缩放热区（EVE: 柄不可见, 光标即提示）
 var _edge_hovers := {}                     # side -> 光标形状
-var _snap_v: ColorRect                    # 垂直吸附指示线
-var _snap_h: ColorRect                    # 水平吸附指示线
 var _own_scroll := false
 ## 帧内冻结的滚动位置：一次提交会在同一帧触发 2~4 次全量重建（Economy 信号 + 处理函数显式
 ## refresh()），只有第一次捕获到的是真实位置 —— 之后重建出的新控件滚动值还是 0。详见 refresh()。
@@ -46,6 +43,10 @@ var _frame_scroll_vals: Array = []
 var _frame_list_vals: Array = []
 ## 帧内合并：本帧是否已排队一次重建（见 refresh）
 var _rebuild_queued := false
+## 拖动位置（鼠标增量直接累加到它, 2026-10-02 起不再有任何吸附改写）
+var _drag_logic := Vector2.ZERO
+## 多开层叠偏移（EconUiRoot.open_panel_add 设置, 由 _do_center 使用）
+var cascade_offset := Vector2.ZERO
 ## 累计重建次数（性能观察 / 回归测试用：同帧多次 refresh 应只 +1）
 var rebuilds := 0
 var _title := ""
@@ -75,12 +76,8 @@ func _init(p_title: String) -> void:
 func _ready() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	visible = false
-
-	var backdrop := ColorRect.new()
-	backdrop.color = EconTheme.BG
-	backdrop.set_anchors_preset(Control.PRESET_FULL_RECT)
-	backdrop.mouse_filter = Control.MOUSE_FILTER_STOP
-	add_child(backdrop)
+	# 显式开启逐帧处理: 基类每帧维护走 NOTIFICATION_PROCESS, 子类重写 _process 也照样收到
+	set_process(true)
 
 	_frame = Control.new()
 	_frame.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -179,17 +176,12 @@ func _ready() -> void:
 	_edge_zone.mouse_filter = Control.MOUSE_FILTER_IGNORE  # 由 _panel 自身的 gui_input 驱动
 	_frame.add_child(_edge_zone)
 
-	# ---- 吸附指示线（EVE: 贴窗口边的短亮条, 不是横贯全屏的线） ----
-	_snap_v = ColorRect.new()
-	_snap_v.color = Color(EconTheme.ACCENT.r, EconTheme.ACCENT.g, EconTheme.ACCENT.b, 0.55)
-	_snap_v.visible = false
-	_snap_v.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_frame.add_child(_snap_v)
-	_snap_h = ColorRect.new()
-	_snap_h.color = Color(EconTheme.ACCENT.r, EconTheme.ACCENT.g, EconTheme.ACCENT.b, 0.55)
-	_snap_h.visible = false
-	_snap_h.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_frame.add_child(_snap_h)
+	# ---- 吸附功能已整体删除（2026-10-02 用户拍板）----
+	# 原因: 吸附会在拖动/缩放时改写位置与**尺寸**（贴到别的窗口边→忽然变宽）、
+	# 把窗口吸到错误位置，且吸附线残留时会横贯全屏。用户要求"直接删掉吸附、也不要吸附线"。
+	# 全屏变暗背板改为 EconUiRoot 共享一层（见 _modal_backdrop）:
+	# 原先每扇窗各带一个 MOUSE_FILTER_STOP 的全屏背板, 多开时最上层那块会把点击全吃掉,
+	# 下面那扇窗根本点不到（点击置顶就无从谈起）。
 
 	# 视口自适应: 声明宽超出视口 95% 时收窄（否则小分辨率下面板天生出屏）
 	var vps := get_viewport_rect().size
@@ -216,20 +208,33 @@ func _ticker_step(delta: float) -> void:
 		_ticker_label.position.x = _ticker_box.size.x
 
 
-func _process(_delta: float) -> void:
+## 每帧维护 —— **不能用 `_process`**（2026-10-02 修"屏幕上留下一条横贯全屏的细线"）：
+## GDScript 重写 `_process` 会顶掉基类实现，而 Build/Factory/Hangar/Research 四个子类都重写了
+## 且没调 `super`，于是基类这段逻辑（吸附线保险丝/边缘热区同步/标题滚动/VSplit 延迟应用）
+## 对它们全部失效 —— 拖窗口时松手落在游戏窗口外，`_input` 收不到 release，
+## 吸附指示线就永久留在屏幕上。改用 NOTIFICATION_PROCESS：引擎一定会发给脚本，
+## 与子类是否定义 `_process` 无关（_ready 里再显式 set_process(true) 确保发送）。
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_PROCESS and not Engine.is_editor_hint():
+		_frame_tick(get_process_delta_time())
+
+
+func _frame_tick(delta: float) -> void:
 	if _panel == null or _edge_zone == null:
 		return
 	_sync_stack_member()
-	_ticker_step(_delta)
+	_ticker_step(delta)
 	if _vs_pending >= 0.0 and _vs_pair.size() == 2:
 		_apply_vsplit(_vs_pair[0], _vs_pair[1])
 		_vs_pending = -1.0
 	_edge_zone.position = _panel.position
 	_edge_zone.size = _panel.size
-	# 吸附指示线保险丝: 非拖拽/缩放状态强制隐藏（松手在窗口外时 _input 收不到 release）
-	if not _dragging and not _resizing:
-		_snap_v.visible = false
-		_snap_h.visible = false
+	# 松手保险丝: 若鼠标左键已松开却仍处于拖动/缩放状态
+	# （松手发生在窗口外, _input 收不到 release）→ 强制结束, 否则窗口会"粘"着鼠标走。
+	if (_dragging or _resizing) and not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+		_dragging = false
+		_resizing = false
+		_persist_layout()
 
 
 ## EVE 式边缘缩放：无任何可见柄。鼠标在窗口边缘 6px 热区内→光标变双向箭头;
@@ -480,7 +485,7 @@ func _fit_scroll() -> void:
 	_scroll.custom_minimum_size.y = clampf(c, 100.0, max_h)
 
 
-# ================= 标题栏拖动（带吸附/防出屏） =================
+# ================= 标题栏拖动（纯增量 + 视口夹取） =================
 
 func _on_header_input(ev: InputEvent) -> void:
 	if ev is InputEventMouseButton and ev.pressed:
@@ -490,73 +495,13 @@ func _on_header_input(ev: InputEvent) -> void:
 			return
 		if ev.button_index == MOUSE_BUTTON_LEFT:
 			_dragging = true
+			_drag_logic = _panel.position
+			_set_active()                   # 点谁谁置顶（含点击置顶/活动窗染色）
 
 
-## 拖动/缩放共用的吸附轴候选：视口边缘 + 其他可见窗口的边
-func _snap_axes() -> Array:
-	var xs: Array = [0.0]
-	var ys: Array = [0.0]
-	var vp := get_viewport_rect().size
-	xs.append(vp.x)
-	ys.append(vp.y)
-	var root := get_parent()
-	if root is EconUiRoot:
-		for other in (root as EconUiRoot)._panels.values():
-			if other == self or not other.visible or other._panel == null:
-				continue
-			var op: Vector2 = other._panel.position
-			var os: Vector2 = other._panel.size
-			xs.append(op.x)
-			xs.append(op.x + os.x)
-			ys.append(op.y)
-			ys.append(op.y + os.y)
-	return [xs, ys]
-
-
-## 拖动中吸附: 返回修正后的位置并显示指示线
-func _apply_drag_snap(pos: Vector2, size: Vector2) -> Vector2:
-	var axes := _snap_axes()
-	var xs: Array = axes[0]
-	var ys: Array = axes[1]
-	var best_x := -1.0
-	var best_dx := SNAP_DISTANCE
-	for ax in xs:
-		for edge_x in [float(ax), float(ax) - size.x]:
-			var d: float = absf(pos.x - edge_x)
-			if d < best_dx:
-				best_dx = d
-				best_x = edge_x
-	var best_y := -1.0
-	var best_dy := SNAP_DISTANCE
-	for ay in ys:
-		for edge_y in [float(ay), float(ay) - size.y]:
-			var d: float = absf(pos.y - edge_y)
-			if d < best_dy:
-				best_dy = d
-				best_y = edge_y
-	var vp := get_viewport_rect().size
-	if best_x >= 0.0:
-		pos.x = best_x
-		_snap_v.visible = true
-		_snap_v.position.x = clampf(best_x, 0.0, vp.x - 2.0)
-		_snap_v.position.y = 0.0
-		_snap_v.size = Vector2(2, vp.y)
-	else:
-		_snap_v.visible = false
-	if best_y >= 0.0:
-		pos.y = best_y
-		_snap_h.visible = true
-		_snap_h.position.y = clampf(best_y, 0.0, vp.y - 2.0)
-		_snap_h.position.x = 0.0
-		_snap_h.size = Vector2(vp.x, 2)
-	else:
-		_snap_h.visible = false
-	return pos
-
-
-func _hide_snap_indicators() -> void:
-	_snap_v.visible = false
-	_snap_h.visible = false
+## 吸附功能已整体删除（2026-10-02 用户拍板: 不要吸附也不要吸附线）。
+## 现场问题: ①贴到别的窗口边会把**尺寸**也改掉（UI 忽然变宽且收不回）②吸到错误位置
+## ③吸附线残留时横贯全屏。拖动/缩放现在都是纯增量 + 视口夹取, 不再改写尺寸或位置。
 
 
 # ================= 折叠（EVE: 保宽度, 动画收成标题条） =================
@@ -583,7 +528,7 @@ func _toggle_collapse() -> void:
 	_persist_layout()
 
 
-# ================= 缩放（四边 + 拖角, 带吸附/最小尺寸） =================
+# ================= 缩放（四边 + 拖角, 最小尺寸；吸附已删除） =================
 
 func _apply_resize(mm: InputEventMouseMotion) -> void:
 	var vp := get_viewport_rect().size
@@ -591,61 +536,22 @@ func _apply_resize(mm: InputEventMouseMotion) -> void:
 	var min_h := maxf(MIN_WIN.y, 120.0)
 	var pos := _panel.position
 	var size := _panel.size
-	var axes := _snap_axes()
-	var xs: Array = axes[0]
-	var ys: Array = axes[1]
 	match _resize_side:
 		2:  # 右
 			size.x = clampf(size.x + mm.relative.x, min_w, vp.x * 0.95)
-			for ax in xs:
-				if absf(pos.x + size.x - float(ax)) < SNAP_DISTANCE:
-					size.x = float(ax) - pos.x
-					_show_snap_v(float(ax), vp)
-					break
-			if size.x < min_w or size.x > vp.x * 0.95:
-				_snap_v.visible = false
 		3:  # 下
 			size.y = clampf(size.y + mm.relative.y, min_h, vp.y * 0.95)
-			for ay in ys:
-				if absf(pos.y + size.y - float(ay)) < SNAP_DISTANCE:
-					size.y = float(ay) - pos.y
-					_show_snap_h(float(ay), vp)
-					break
-			if size.y < min_h or size.y > vp.y * 0.95:
-				_snap_h.visible = false
 		0:  # 左
 			var nx := clampf(pos.x + mm.relative.x, 0.0, pos.x + size.x - min_w)
 			size.x = size.x - (nx - pos.x)
-			for ax in xs:
-				if absf(nx - float(ax)) < SNAP_DISTANCE:
-					nx = float(ax)
-					size.x = (pos.x + size.x) - nx
-					_show_snap_v(float(ax), vp)
-					break
 			pos.x = nx
 		1:  # 上
 			var ny := clampf(pos.y + mm.relative.y, 0.0, pos.y + size.y - min_h)
 			size.y = size.y - (ny - pos.y)
-			for ay in ys:
-				if absf(ny - float(ay)) < SNAP_DISTANCE:
-					ny = float(ay)
-					size.y = (pos.y + size.y) - ny
-					_show_snap_h(float(ay), vp)
-					break
 			pos.y = ny
 		4:  # 右下角: 宽高同时
 			size.x = clampf(size.x + mm.relative.x, min_w, vp.x * 0.95)
 			size.y = clampf(size.y + mm.relative.y, min_h, vp.y * 0.95)
-			for ax in xs:
-				if absf(pos.x + size.x - float(ax)) < SNAP_DISTANCE:
-					size.x = float(ax) - pos.x
-					_show_snap_v(float(ax), vp)
-					break
-			for ay in ys:
-				if absf(pos.y + size.y - float(ay)) < SNAP_DISTANCE:
-					size.y = float(ay) - pos.y
-					_show_snap_h(float(ay), vp)
-					break
 		5:  # 左上角
 			var nx5 := clampf(pos.x + mm.relative.x, 0.0, pos.x + size.x - min_w)
 			var ny5 := clampf(pos.y + mm.relative.y, 0.0, pos.y + size.y - min_h)
@@ -671,18 +577,6 @@ func _apply_resize(mm: InputEventMouseMotion) -> void:
 		_scroll.custom_minimum_size.y = 0.0
 
 
-func _show_snap_v(ax: float, vp: Vector2) -> void:
-	_snap_v.visible = true
-	_snap_v.position = Vector2(clampf(ax, 0.0, vp.x - 2.0), 0.0)
-	_snap_v.size = Vector2(2, vp.y)
-
-
-func _show_snap_h(ay: float, vp: Vector2) -> void:
-	_snap_h.visible = true
-	_snap_h.position = Vector2(0.0, clampf(ay, 0.0, vp.y - 2.0))
-	_snap_h.size = Vector2(vp.x, 2)
-
-
 # ================= 全局拖动/缩放运动处理 =================
 
 func _input(event: InputEvent) -> void:
@@ -693,10 +587,9 @@ func _input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion:
 		var mm := event as InputEventMouseMotion
 		if _dragging:
-			var pos := _panel.position + mm.relative
-			# 吸附（拖动中显示吸附边线, EVE ShowSnapEdges_Moving）
-			pos = _apply_drag_snap(pos, _panel.size)
-			_panel.position = pos
+			# 纯增量拖动（吸附已删除 2026-10-02）: 位置严格跟着鼠标走, 不改写尺寸也不吸到别处。
+			_drag_logic += mm.relative
+			_panel.position = _drag_logic
 			_user_moved = true
 			_clamp_panel_offscreen()
 		elif _resizing and _resize_side >= 0:
@@ -711,17 +604,18 @@ func _input(event: InputEvent) -> void:
 				_resizing = false
 				return
 		if _dragging or _resizing:
-			_hide_snap_indicators()
 			_persist_layout()
 		_dragging = false
 		_resizing = false
 
 
-## EVE 允许窗口拖出屏幕（保留 50px 边缘可抓, 防整窗丢失）——拖向上不再卡住
+## 夹在视口内（2026-10-02 改）: 原先允许拖出屏只留 50px ⇒ 窗口右上角的 ✕ 会被拖出屏幕,
+## 用户报"无法关闭"。现在整窗始终在视口内（窗口比视口大时贴 0 边）, ✕ 永远点得到。
 func _clamp_panel_offscreen() -> void:
 	var vp := get_viewport_rect().size
-	_panel.position.x = clampf(_panel.position.x, 50.0 - _panel.size.x, vp.x - 50.0)
-	_panel.position.y = clampf(_panel.position.y, 50.0 - _panel.size.y, vp.y - 50.0)
+	_panel.position.x = clampf(_panel.position.x, 0.0, maxf(vp.x - _panel.size.x, 0.0))
+	_panel.position.y = clampf(_panel.position.y, 0.0, maxf(vp.y - _panel.size.y, 0.0))
+	_drag_logic = _panel.position   # 逻辑位置同步, 否则贴边后要"回拖"一段才动
 
 
 func _clamp_panel() -> void:
@@ -739,9 +633,10 @@ func _do_center() -> void:
 			var vs := get_viewport_rect().size
 			_panel.size = Vector2(minf(default_size.x, vs.x * 0.95), minf(default_size.y, vs.y * 0.95))
 	var vp := get_viewport_rect().size
+	# 多开时的层叠偏移（EconUiRoot.open_panel_add 设置）: 避免新窗完全盖住已有窗
 	_panel.position = Vector2(
-		clampf((vp.x - _panel.size.x) * 0.5, 4.0, maxf(vp.x - _panel.size.x - 4.0, 4.0)),
-		clampf((vp.y - _panel.size.y) * 0.5, 4.0, maxf(vp.y - _panel.size.y - 4.0, 4.0)))
+		clampf((vp.x - _panel.size.x) * 0.5, 4.0, maxf(vp.x - _panel.size.x - 4.0, 4.0)) + cascade_offset.x,
+		clampf((vp.y - _panel.size.y) * 0.5, 4.0, maxf(vp.y - _panel.size.y - 4.0, 4.0)) + cascade_offset.y)
 
 
 # ================= 双栏分隔条（可拖调整左右占比） =================
@@ -868,15 +763,6 @@ func _apply_dock_visual(docked: bool) -> void:
 		_footer.visible = not docked
 	if _tab_bar != null:
 		_tab_bar.visible = not docked and stack_members.size() > 0
-	backdrop_scale_hack(docked)
-
-
-## 寄宿成员的背板透明化（视觉融入宿主）
-func backdrop_scale_hack(on: bool) -> void:
-	for i in get_child_count():
-		var c := get_child(i)
-		if c is ColorRect and c.name == "":
-			(c as ColorRect).modulate.a = 0.0 if on else 1.0
 
 
 ## 成员每帧跟随宿主位置/尺寸（宿主 tab 条下方起）
