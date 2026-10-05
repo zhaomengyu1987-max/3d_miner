@@ -65,20 +65,42 @@ func _get_state() -> Dictionary:
 	}
 
 
-func _apply_state(data: Variant) -> void:
+func _apply_state(data: Variant) -> bool:
 	if typeof(data) != TYPE_DICTIONARY:
-		return
-	exploration = data.get("exploration", exploration)
-	captains = data.get("captains", {})
-	recruit_pool = data.get("recruit_pool", [])
+		return false
+	# ── 结构校验: 任何字段类型不符 = 节损坏 → 拒绝回放(GameSave 挂起写入保护旧档) ──
+	var exploration_d: Variant = data.get("exploration", null)
+	var captains_d: Variant = data.get("captains", null)
+	var pool_a: Variant = data.get("recruit_pool", null)
+	var teams_d: Variant = data.get("teams", null)
+	var active_d: Variant = data.get("active", null)
+	var stats_d: Variant = data.get("stats", null)
+	if typeof(exploration_d) != TYPE_DICTIONARY or typeof(captains_d) != TYPE_DICTIONARY 			or typeof(pool_a) != TYPE_ARRAY or typeof(teams_d) != TYPE_DICTIONARY 			or typeof(active_d) != TYPE_DICTIONARY or typeof(stats_d) != TYPE_DICTIONARY:
+		push_warning("MissionOps: 存档节结构损坏, 拒绝回放")
+		return false
+	for cid in captains_d:
+		if typeof(captains_d[cid]) != TYPE_DICTIONARY or not (captains_d[cid] as Dictionary).has("status"):
+			push_warning("MissionOps: captains 条目损坏(%s)" % str(cid))
+			return false
+	for tid in active_d:
+		var m: Variant = active_d[tid]
+		if typeof(m) != TYPE_DICTIONARY or not (m as Dictionary).has_all(
+				["task_id", "team_id", "seed", "ends_wall"]):
+			push_warning("MissionOps: active 条目损坏(%s)" % str(tid))
+			return false
+	# ── 校验通过, 回放 ──
+	exploration = exploration_d
+	captains = captains_d
+	recruit_pool = pool_a
+	teams = teams_d
+	active = active_d
+	stats = stats_d
 	pool_refresh_at = float(data.get("pool_refresh_at", 0.0))
 	pool_seed = int(data.get("pool_seed", 0))
-	teams = data.get("teams", {})
-	active = data.get("active", {})
-	stats = data.get("stats", stats)
 	_cap_seq = int(data.get("cap_seq", 0))
 	_team_seq = int(data.get("team_seq", 0))
 	_mis_seq = int(data.get("mis_seq", 0))
+	return true
 
 
 # ── 主循环: 到点结算 ──
@@ -154,11 +176,18 @@ func dismiss_captain(cid: String) -> Dictionary:
 		return {"ok": false, "why": "舰长不存在"}
 	if captains[cid]["status"] != "idle":
 		return {"ok": false, "why": "在途舰长不可解雇"}
+	# 解雇自动解散其编队(审查 P1: 不留悬空占位占容量)
+	var disbanded: Array[String] = []
+	for tid in teams.keys():
+		if teams[tid]["captain_id"] == cid:
+			disbanded.append(tid)
+	for tid in disbanded:
+		teams.erase(tid)
 	Economy.add_money(MissionDefs.TIERS[captains[cid]["tier"]]["hire_fee"] * 0.5)
 	captains.erase(cid)
 	get_node("/root/GameSave").touch()
 	captain_state_changed.emit(cid, "dismissed")
-	return {"ok": true}
+	return {"ok": true, "disbanded": disbanded}
 
 
 # ── 编队(M1: 舰长即编队, 船位 M2 舰船实例落地后启用) ──
