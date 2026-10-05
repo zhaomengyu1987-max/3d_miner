@@ -121,6 +121,14 @@ const MODULES := {
 	# 激光采矿护卫舰（2026-09-30 新增）：环绕 M 档矿用中黄激光开采，货舱满回站卸货
 	"corvette": {"name": "激光采矿护卫舰", "desc": "激光挖掘 M 档矿：5 单位/秒 · 货舱 500", "max_count": 3,
 		"cost": {"commonA": 500, "commonB": 100}, "time": 180.0, "unit": "艘"},
+	# 雇佣兵巢穴（蓝图 §5.9, 2026-10-04）：等级制, 每级 +1 行动舰队容量
+	"hive": {"name": "雇佣兵巢穴", "desc": "行动舰队容量 +1/级——解锁探索派遣(F6)",
+		"levels": [
+			{"cost": {"commonA": 300, "cabin": 2}, "time": 300.0},
+			{"cost": {"commonA": 800, "truss": 4, "cabin": 3}, "time": 600.0},
+			{"cost": {"commonD": 1500, "truss": 8, "ecu": 3}, "time": 900.0},
+			{"cost": {"commonD": 3000, "ecu": 6, "fueltank": 2}, "time": 1200.0},
+		]},
 }
 
 # ---------- 来访货舰（§5.3，草案） ----------

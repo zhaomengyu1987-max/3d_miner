@@ -163,6 +163,8 @@ func _startup_catch_up() -> void:
 	# 恢复档的空池等计时到期由 _process 自然刷新(审查 R3-P2)
 	if recruit_pool.is_empty() and pool_refresh_at <= 0.0:
 		_refresh_pool()
+	if fleet_cap() == 0:
+		print("[MissionOps] 雇佣兵巢穴未建造——建造后解锁探索派遣(F6)")
 	board_refreshed.emit()
 
 
@@ -269,9 +271,16 @@ func dismiss_captain(cid: String) -> Dictionary:
 
 
 # ── 编队(M1: 舰长即编队, 船位 M2 舰船实例落地后启用) ──
+## 舰队容量 = 巢穴等级(蓝图 §5.9); 未建巢穴 → 0 队 → 一切派遣锁死
+func fleet_cap() -> int:
+	if Economy.has_method("hive_level"):
+		return Economy.hive_level()
+	return MissionDefs.MAX_TEAMS   # Economy 不在(main 未并入)时用占位
+
+
 func create_team(team_name: String, cid: String) -> Dictionary:
-	if teams.size() >= MissionDefs.MAX_TEAMS:
-		return {"ok": false, "why": "行动舰队已满(%d 队)" % MissionDefs.MAX_TEAMS}
+	if teams.size() >= fleet_cap():
+		return {"ok": false, "why": "行动舰队已满(%d 队)" % fleet_cap()}
 	if not captains.has(cid):
 		return {"ok": false, "why": "舰长不存在"}
 	if captains[cid]["status"] != "idle":
