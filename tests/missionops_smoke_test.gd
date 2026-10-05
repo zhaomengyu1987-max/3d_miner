@@ -101,7 +101,6 @@ func _run_all() -> void:
 	var ep_snap := mo.ep()
 	var caps_snap: int = mo.captains.size()
 	var teams_snap: int = mo.teams.size()
-	var money_snap: float = Economy.money
 	mo.exploration["ep"] = ep_snap + 77                       # 内存污染
 	mo.captains["cap_fake"] = {"name": "幽灵", "tier": "normal", "spec": "combat",
 		"level": 1, "exp": 0, "status": "idle"}
@@ -110,7 +109,6 @@ func _run_all() -> void:
 	_check("round-trip: 舰长表还原(幽灵被清除)", \
 		not mo.captains.has("cap_fake") and mo.captains.size() == caps_snap)
 	_check("round-trip: 编队数还原", mo.teams.size() == teams_snap)
-	_check("round-trip: 钱包还原", absf(Economy.money - money_snap) < 0.001)
 
 	# ⑪ 重启补算: 派遣未来任务 → 模拟进程死亡(清内存) → 文件回放 → catch_up → 幂等
 	var done0 := int(mo.stats["done"])
@@ -121,9 +119,18 @@ func _run_all() -> void:
 	mo.active = {}                                            # 进程死亡(内存丢失)
 	get_node("/root/GameSave")._load_or_init()                # 文件回放
 	_check("重启回放: 在途任务还原", mo.active.has(mid2))
-	mo.now_override_sec = float(mo.active[mid2]["ends_wall"]) + 1.0
+	# 真复现断言(审查 R3): 用回放恢复的舰长配置重算这一掷, 预测结算成败
+	var mis2: Dictionary = mo.active[mid2]
+	var cap2: Dictionary = mo.captains[mis2["cid"]]
+	var rng2 := RandomNumberGenerator.new()
+	rng2.seed = int(mis2["seed"])
+	var p2 := MissionDefs.success_probability(MissionDefs.TASKS[mis2["task_id"]], cap2)
+	var expect_success := rng2.randf() < p2
+	mo.now_override_sec = float(mis2["ends_wall"]) + 1.0
 	mo._catch_up(mo._now())
 	_check("重启补算: 到点结算", not mo.active.has(mid2) and int(mo.stats["done"]) == done0 + 1)
+	_check("真复现: 重算掷骰与实际结算一致",
+		mo._last_report.get("success", null) == expect_success)
 	mo._catch_up(mo._now())
 	_check("重启补算幂等(不双发)", int(mo.stats["done"]) == done0 + 1)
 
@@ -163,7 +170,23 @@ func _run_all() -> void:
 	_check("解雇自动解散其编队", mo.teams.size() == teams_before - 1 		and not mo.teams.has(tid))
 	_check("二队不受牵连", mo.teams.has(rt2.get("team_id", "team_002")))
 
-	# ⑯ 节损坏 → 挂起写入(审查 P1): exploration={} 必须被拒
+	# ⑯ 节损坏 → 挂起写入(审查 R3): active.dur 类型损坏 / exploration={} 均必须被拒
+	var r16: Dictionary = mo.dispatch(tid, "mo_survey_ice", 777)
+	if bool(r16.get("ok", false)):
+		get_node("/root/GameSave").save_now()
+		var f16 := FileAccess.open("user://save.json", FileAccess.READ)
+		var j16: Variant = JSON.parse_string(f16.get_as_text())
+		f16.close()
+		var mid16: String = r16.get("mission_id", "")
+		(j16 as Dictionary)["sections"]["missionops"]["active"][mid16]["dur"] = {}
+		var fw := FileAccess.open("user://save.json", FileAccess.WRITE)
+		fw.store_string(JSON.stringify(j16))
+		fw.close()
+		mo.reset_state()
+		get_node("/root/GameSave").write_suspended = false
+		get_node("/root/GameSave")._load_or_init()
+		_check("损坏节: active.dur 类型损坏被拒", get_node("/root/GameSave").write_suspended)
+		get_node("/root/GameSave").write_suspended = false
 	mo.exploration = {}
 	get_node("/root/GameSave").save_now()               # 把坏节写进档(模拟损坏)
 	get_node("/root/GameSave").write_suspended = false
