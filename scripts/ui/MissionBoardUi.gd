@@ -103,7 +103,7 @@ func _one_click_prep() -> void:
 		return
 	if cid == "":
 		if MissionOps.recruit_pool.is_empty():
-			var wait := int(maxf(0.0, MissionOps.pool_refresh_at - Time.get_unix_time_from_system()))
+			var wait := int(maxf(0.0, MissionOps.pool_refresh_at - MissionOps._now()))
 			_flash("招募池待刷新(%d 秒后)" % wait)
 			return
 		var cand: Dictionary = MissionOps.recruit_pool[0]
