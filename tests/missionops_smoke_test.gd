@@ -357,6 +357,128 @@ func _run_all() -> void:
 	Economy.save_path = orig_save_path
 	gs.write_suspended = false
 
+	# ═══════════ M2 功能测试 ═══════════
+
+	# ㉑ 舰船启用/退役(P1-2: ship_uids) — 绝对重置库存(不受之前测试影响)
+	Economy.inv["longbow"] = 2
+	var rc21: Dictionary = mo.commission_ship("longbow")
+	_check("㉑ 启用成功", bool(rc21.get("ok", false)))
+	var ship1: String = rc21.get("uid", "")
+	_check("㉑ 自动编号 001号", rc21.get("name", "") == "001号")
+	_check("㉑ 库存-1", int(Economy.inv.get("longbow", 0)) == 1)
+	var rc21b: Dictionary = mo.commission_ship("longbow")
+	_check("㉑ 二号舰 002号", rc21b.get("name", "") == "002号")
+	var ship2: String = rc21b.get("uid", "")
+	_check("㉑ 库存-2", int(Economy.inv.get("longbow", 0)) == 0)
+	var rc21c: Dictionary = mo.commission_ship("longbow")
+	_check("㉑ 库存空拒绝", not bool(rc21c.get("ok", false)))
+
+	# ㉒ 舰船入编队(P1-2: 装备门槛的前提)
+	var rt22: Dictionary = mo.add_ship_to_team(tid, ship1)
+	_check("㉒ 船入队成功", bool(rt22.get("ok", false)))
+	_check("㉒ 编队有 ship_uids", mo.teams[tid].get("ship_uids", []).has(ship1))
+	var rt22b: Dictionary = mo.add_ship_to_team(tid, ship2)
+	_check("㉒ 二号船入队", bool(rt22b.get("ok", false)))
+
+	# ㉓ 装备安装/卸下+门槛(P1-2 验证)
+	mo.grant_equipment("eq_weapon_mk1", 2)
+	var ri23: Dictionary = mo.install_equipment(ship1, "eq_weapon_mk1")
+	_check("㉓ 安装武器", bool(ri23.get("ok", false)))
+	_check("㉓ 舰船 fitted 有武器", mo.fleet[ship1]["fitted"]["weapon"] == "eq_weapon_mk1")
+	_check("㉓ 库存-1", int(mo.inventory.get("eq_weapon_mk1", 0)) == 1)
+	# 装备门槛: 战斗任务需要武器
+	var gaps23: Array[String] = mo.check_equip_req("mo_combat_skirmish", tid)
+	_check("㉓ 战斗门槛通过(有武器)", gaps23.is_empty())
+	var gaps23b: Array[String] = mo.check_equip_req("mo_signal_faint", tid)
+	_check("㉓ 信号门槛未通过(无电子)", not gaps23b.is_empty())
+	# 卸下
+	var rr23: Dictionary = mo.remove_equipment(ship1, "weapon")
+	_check("㉓ 卸下武器", bool(rr23.get("ok", false)))
+	_check("㉓ 卸下后库存+1", int(mo.inventory.get("eq_weapon_mk1", 0)) == 2)
+
+	# ㉔ 舰长技能学习/升级
+	mo.captains[cid]["points"] = 3   # 给技能点
+	var rl24: Dictionary = mo.learn_skill(cid, "first_strike")
+	_check("㉔ 学习技能", bool(rl24.get("ok", false)))
+	_check("㉔ 技能已学 lv1", int(mo.captains[cid]["skills"].get("first_strike", 0)) == 1)
+	_check("㉔ 点数-1", int(mo.captains[cid]["points"]) == 2)
+	var ru24: Dictionary = mo.upgrade_skill(cid, "first_strike")
+	_check("㉔ 升级到 lv2", bool(ru24.get("ok", false)))
+	_check("㉔ 点数-2", int(mo.captains[cid]["points"]) == 1)
+	var rl24b: Dictionary = mo.learn_skill(cid, "first_strike")
+	_check("㉔ 重复学习被拒", not bool(rl24b.get("ok", false)))
+
+	# ㉕ T1 升级
+	mo.grant_equipment("eq_weapon_mk1", 1)
+	mo.grant_material("exp_weapon", 5)
+	var ru25: Dictionary = mo.upgrade_equipment("eq_weapon_mk1")
+	_check("㉕ T1 升级成功", bool(ru25.get("ok", false)))
+	_check("㉕ 升级品入库", int(mo.inventory.get("eq_weapon_mk1_up", 0)) >= 1)
+	_check("㉕ 材料消耗", int(mo.inventory.get("exp_weapon", 0)) == 0)
+
+	# ㉖ 碎片兑换
+	mo.inventory["frag_generic"] = 5
+	var re26: Dictionary = mo.exchange_fragments()
+	_check("㉖ 兑换成功", bool(re26.get("ok", false)))
+	_check("㉖ 逆向素材+1", int(mo.inventory.get("reverse_material", 0)) >= 1)
+
+	# ㉗ 部分成功(需要 seed 落在 partial 区)
+	var partial_seed := _find_partial_seed("mo_survey_ice", cid)
+	if partial_seed >= 0:
+		mo.install_equipment(ship1, "eq_weapon_mk1")  # 确保有装备
+		var rp: Dictionary = mo.dispatch(tid, "mo_survey_ice", partial_seed)
+		if bool(rp.get("ok", false)):
+			mo.now_override_sec = float(mo.active[rp["mission_id"]]["ends_wall"]) + 1.0
+			await get_tree().process_frame
+			var rep: Dictionary = mo._last_report
+			_check("㉗ 部分成功标记", rep.get("partial", false) == true)
+			_check("㉗ 部分成功有奖励", float(rep.get("credits", 0)) > 0)
+			_check("㉗ 部分奖励 < 全额", float(rep.get("credits", 0)) < float(MissionDefs.TASKS["mo_survey_ice"]["credits"]))
+
+	# ㉘ 三层板冷却
+	var board_tasks: Array[Dictionary] = mo.get_board_tasks()
+	_check("㉘ 板含常驻任务", board_tasks.size() >= MissionDefs.RESIDENT_TASKS.size())
+	var has_resident := false
+	for bt in board_tasks:
+		if bt["layer"] == "resident":
+			has_resident = true
+			break
+	_check("㉘ 常驻层存在", has_resident)
+	# 派遣一个常驻任务再检查冷却
+	var idle28 := mo.first_idle_team()
+	if idle28 != "":
+		var r28: Dictionary = mo.dispatch(idle28, "mo_salvage_field", 999)
+		if bool(r28.get("ok", false)):
+			mo.now_override_sec = float(mo.active[r28["mission_id"]]["ends_wall"]) + 1.0
+			await get_tree().process_frame
+			var board28: Array[Dictionary] = mo.get_board_tasks()
+			var found_cd := false
+			for bt in board28:
+				if bt["id"] == "mo_salvage_field" and bt["cooldown"]:
+					found_cd = true
+					break
+			_check("㉘ 常驻冷却生效", found_cd)
+
+	# ㉙ 远征材料掉落+发现物
+	var mat_before: int = int(mo.inventory.get("exp_elec", 0))
+	var disc_before: int = mo.discovery_count()
+	var idle29 := mo.first_idle_team()
+	if idle29 != "":
+		var win29 := _find_succeeding_seed("mo_survey_ice", mo.teams[idle29]["captain_id"])
+		var r29: Dictionary = mo.dispatch(idle29, "mo_survey_ice", win29)
+		if bool(r29.get("ok", false)):
+			mo.now_override_sec = float(mo.active[r29["mission_id"]]["ends_wall"]) + 1.0
+			await get_tree().process_frame
+			_check("㉙ 远征材料掉落", int(mo.inventory.get("exp_elec", 0)) > mat_before)
+			_check("㉙ 勘测任务出发现物", mo.discovery_count() > disc_before)
+
+	# ㉚ 舰船退役
+	var fleet_before: int = mo.ship_count()
+	var rd30: Dictionary = mo.decommission_ship(ship2)
+	_check("㉚ 退役成功", bool(rd30.get("ok", false)))
+	_check("㉚ 名册-1", mo.ship_count() == fleet_before - 1)
+	_check("㉚ 库存+1", int(Economy.inv.get("longbow", 0)) >= 1)
+
 	print("== 结果: %s (fails=%d) ==" % ["PASS" if _fails == 0 else "FAIL", _fails])
 	get_tree().quit(0 if _fails == 0 else 1)
 
@@ -377,6 +499,19 @@ func _find_succeeding_seed(task_id: String, cid: String) -> int:
 		var rng := RandomNumberGenerator.new()
 		rng.seed = seed_v
 		if rng.randf() < p:
+			return seed_v
+	return -1
+
+
+func _find_partial_seed(task_id: String, cid: String) -> int:
+	var def: Dictionary = MissionDefs.TASKS[task_id]
+	var p := MissionDefs.success_probability(def, MissionOps.captains.get(cid, {}))
+	var partial_line: float = p + (1.0 - p) * 0.5
+	for seed_v in range(1, 500):
+		var rng := RandomNumberGenerator.new()
+		rng.seed = seed_v
+		var roll := rng.randf()
+		if roll >= p and roll < partial_line:
 			return seed_v
 	return -1
 
