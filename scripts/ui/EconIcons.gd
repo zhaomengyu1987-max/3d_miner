@@ -61,15 +61,49 @@ const _FACTORY := [
 ]
 
 static var _cache: Dictionary = {}
+static var _png_cache: Dictionary = {}
+
+
+## M2: 通用模块图标——PNG 优先, 字符画回退(仅 market/factory 有字符画)
+static func module_icon(module_id: String) -> Texture2D:
+	match module_id:
+		"market":
+			return market_logo()
+		"factory":
+			return factory_logo()
+	var png := png_icon(module_id)
+	if png != null:
+		return png
+	return null   # 无 PNG 也无字符画的模块返回 null(面板自行处理)
+
+
+## M2: 从 assets/ui/icons/ 加载 PNG 图标(48×48, EVE 渲染风)
+## 找不到文件时回退到字符画版(不返回 null)
+static func png_icon(module_id: String) -> Texture2D:
+	if _png_cache.has(module_id) and _png_cache[module_id] != null:
+		return _png_cache[module_id]
+	var path := "res://assets/ui/icons/icon_%s.png" % module_id
+	if not ResourceLoader.exists(path):
+		return null
+	var tex: Texture2D = load(path)
+	if tex != null:
+		_png_cache[module_id] = tex
+	return tex
 
 
 ## 市场交易 logo（黑底 + 双向箭头）。scale = 整数放大倍率（1 = 16×16 原始像素）
 static func market_logo(scale := 3) -> Texture2D:
+	var png := png_icon("market")
+	if png != null:
+		return png
 	return _make("market", _MARKET, scale)
 
 
 ## 建造厂 · 商品制造 logo（黑底 + 齿轮）
 static func factory_logo(scale := 3) -> Texture2D:
+	var png := png_icon("factory")
+	if png != null:
+		return png
 	return _make("factory", _FACTORY, scale)
 
 
