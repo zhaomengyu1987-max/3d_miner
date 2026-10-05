@@ -321,10 +321,16 @@ func create_team(team_name: String, cid: String) -> Dictionary:
 	for tid in teams:
 		if teams[tid]["captain_id"] == cid:
 			return {"ok": false, "why": "该舰长已带另一队"}
+	# 同步落盘+回滚(自查 P2: 与 hire/dismiss/resolve 同模式)
+	var snap_seq := _team_seq
 	_team_seq += 1
 	var tid := "team_%03d" % _team_seq
 	teams[tid] = {"name": team_name, "captain_id": cid}
-	get_node("/root/GameSave").touch()
+	var gs := get_node_or_null("/root/GameSave")
+	if gs and not gs.save_now():
+		teams.erase(tid)
+		_team_seq = snap_seq
+		return {"ok": false, "why": "存档写入失败, 建队已取消"}
 	return {"ok": true, "team_id": tid}
 
 
@@ -355,6 +361,8 @@ func dispatch(team_id: String, task_id: String, seed_override: int = -1) -> Dict
 	if not captains.has(cid) or captains[cid]["status"] != "idle":
 		return {"ok": false, "why": "舰长不在岗"}
 	var def: Dictionary = MissionDefs.TASKS[task_id]
+	# 同步落盘+回滚(自查 P2: 崩溃丢派遣而非幽灵在途)
+	var snap_seq := _mis_seq
 	_mis_seq += 1
 	var mid := "mis_%03d" % _mis_seq
 	var seed_v := seed_override if seed_override >= 0 else int(_now() * 1000.0) ^ (_mis_seq * 7919)
@@ -363,7 +371,12 @@ func dispatch(team_id: String, task_id: String, seed_override: int = -1) -> Dict
 	active[mid] = {"task_id": task_id, "team_id": team_id, "cid": cid,
 		"seed": seed_v, "started_wall": now, "ends_wall": now + dur, "dur": dur}
 	captains[cid]["status"] = "on_mission"
-	get_node("/root/GameSave").touch()
+	var gs := get_node_or_null("/root/GameSave")
+	if gs and not gs.save_now():
+		active.erase(mid)
+		_mis_seq = snap_seq
+		captains[cid]["status"] = "idle"
+		return {"ok": false, "why": "存档写入失败, 派遣已取消"}
 	captain_state_changed.emit(cid, "on_mission")
 	return {"ok": true, "mission_id": mid, "ends_wall": now + dur}
 
@@ -391,6 +404,7 @@ func _resolve(mid: String) -> void:
 	var snap_failed := int(stats["failed"])
 	var snap_ep := int(exploration["ep"])
 	var snap_status: String = captains[cid]["status"] if captains.has(cid) else ""
+	var snap_cap: Dictionary = captains[cid].duplicate() if captains.has(cid) else {}
 	active.erase(mid)
 	if captains.has(cid):
 		captains[cid]["status"] = "idle"
@@ -419,9 +433,11 @@ func _resolve(mid: String) -> void:
 			stats["failed"] = snap_failed
 			active[mid] = mis
 			if captains.has(cid):
+				captains[cid] = snap_cap            # 恢复完整舰长(含exp/level, 自查P2)
 				captains[cid]["status"] = snap_status
 			if gs:
 				gs.save_now()
+			_last_report = {}                       # 清残留报告(P3)
 			push_warning("MissionOps: 经济存档失败, 结算已回滚(mid=%s)" % mid)
 			return
 	else:
