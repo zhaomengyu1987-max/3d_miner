@@ -20,7 +20,7 @@ config/icon="res://icon.svg"
 MCPRuntimeServer="*res://addons/godot_mcp_toolkit/runtime/mcp_runtime_server.gd"
 SettingsPanel="*res://scripts/SettingsPanel.gd"
 Economy="*res://scripts/economy/Economy.gd"
-WorldState="*res://scripts/economy/WorldState.gd"
+WorldState="*uid://c2pvxdvoctftf"
 GameSave="*res://scripts/save/GameSave.gd"
 MissionOps="*res://scripts/missionops/MissionOps.gd"
 
