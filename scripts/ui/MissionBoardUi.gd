@@ -23,6 +23,11 @@ var _report_lab: RichTextLabel
 func _ready() -> void:
 	visible = false
 	custom_minimum_size = Vector2(560, 0)
+	# 靠右锚定, 避开左上 HUD(验收 P2-1)
+	set_anchors_preset(Control.PRESET_CENTER_RIGHT)
+	offset_left = -580
+	offset_top = 60
+	offset_right = -20
 	add_theme_stylebox_override("panel", _box(PANEL_BG))
 	_build()
 
@@ -89,6 +94,18 @@ func _build() -> void:
 
 	MissionOps.mission_completed.connect(_on_mission_done)
 	MissionOps.board_refreshed.connect(_refresh)
+	# 1s 倒计时刷新(验收 P2-3: 在途剩余时间实时更新)
+	var t := Timer.new()
+	t.wait_time = 1.0
+	t.timeout.connect(_tick_countdown)
+	add_child(t)
+	t.start()
+
+
+func _tick_countdown() -> void:
+	if visible and _has_busy_team() and MissionOps.first_idle_team() == "":
+		var remain := _busiest_remain_sec()
+		_team_lab.text = "编队在途 · 剩余 %d:%02d" % [remain / 60, remain % 60]
 
 
 func _one_click_prep() -> void:
@@ -149,6 +166,9 @@ func _refresh() -> void:
 		_team_lab.text = "编队: %s · 在岗" % MissionOps.teams[idle]["name"]
 	elif MissionOps.fleet_cap() == 0:
 		_team_lab.text = "编队: [需要雇佣兵巢穴]——空间站建造解锁探索派遣"
+	elif _has_busy_team():
+		var remain := _busiest_remain_sec()
+		_team_lab.text = "编队在途 · 剩余 %d:%02d" % [remain / 60, remain % 60]
 	else:
 		_team_lab.text = "编队: 无可用(先一键备战)"
 	for tid in MissionDefs.TASKS:
@@ -169,6 +189,28 @@ func _refresh() -> void:
 		btn.pressed.connect(_dispatch.bind(tid))
 		row.add_child(btn)
 		_list_box.add_child(row)
+
+
+func _has_busy_team() -> bool:
+	return not MissionOps.active.is_empty()
+
+
+func _busiest_remain_sec() -> int:
+	var latest := 0.0
+	for mid in MissionOps.active:
+		var r: float = float(MissionOps.active[mid]["ends_wall"]) - MissionOps._now()
+		if r > latest:
+			latest = r
+	return int(ceilf(maxf(0.0, latest)))
+
+
+## 面板互斥(验收 P2-2): 经济面板打开时隐藏任务板
+func _process(_delta: float) -> void:
+	if not visible:
+		return
+	var ui_root := get_tree().root.find_child("EconUiRoot", true, false)
+	if ui_root and ui_root.get("modal_open"):
+		visible = false
 
 
 func _dispatch(task_id: String) -> void:
