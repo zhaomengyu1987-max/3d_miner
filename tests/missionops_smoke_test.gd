@@ -146,7 +146,8 @@ func _run_all() -> void:
 	_check("非法任务被拒", not bool(rbad.get("ok", false)))
 
 	# ⑬ 容量顺序(审查 P2): 两队都在途时一键备战不得先扣押金
-	# 前置: 雇第二名舰长建二队, 双队派遣在途
+	# 前置: 清冷却(之前测试派遣过常驻任务会设置冷却) + 雇第二名舰长建二队
+	mo.board["resident_cd"] = {}   # 清冷却供后续测试派遣
 	var r2b: Dictionary = mo.hire_captain(mo.recruit_pool[0]["cid"])
 	_check("二队舰长雇佣", bool(r2b.get("ok", false)))
 	var cid2: String = r2b.get("cid", "")
@@ -177,6 +178,7 @@ func _run_all() -> void:
 	_check("解雇自动解散其编队", mo.teams.size() == teams_before - 1 		and not mo.teams.has(tid))
 	_check("二队不受牵连", mo.teams.has(rt2.get("team_id", "team_002")))
 
+	mo.board["resident_cd"] = {}   # ⑭推时间导致冷却, 清掉
 	# ⑯ 节损坏(放最后——reset 会销毁一切前置) → 挂起写入(自查 P2)
 	# 用二队派遣(一队已被⑮解雇销毁)
 	var rc: Dictionary = mo.dispatch(rt2.get("team_id", ""), "mo_survey_ice", 777)
@@ -206,6 +208,7 @@ func _run_all() -> void:
 	mo.reset_state()
 	get_node("/root/GameSave").save_now()
 
+	mo.board["resident_cd"] = {}   # 清冷却
 	# ⑰ 前置: ⑯ 的 reset 清光了 → 重新雇佣+建队供 ⑰⑱⑲ 使用
 	if mo.captains.is_empty() and not mo.recruit_pool.is_empty():
 		mo.hire_captain(mo.recruit_pool[0]["cid"])
@@ -310,6 +313,7 @@ func _run_all() -> void:
 		_check("经济失败: 舰长仍在", mo.captains.size() == caps_20c)
 		Economy.save_path = orig_save_path
 
+	mo.board["resident_cd"] = {}   # 清冷却
 	# ⑳-d 结算: 经济失败 → 奖励撤回+任务放回+经验恢复
 	var tid20 := ""
 	for t in mo.teams:

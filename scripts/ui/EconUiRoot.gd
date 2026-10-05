@@ -507,6 +507,13 @@ func _make_module_button(id: String) -> Button:
 	b.custom_minimum_size = Vector2(108, 64)
 	b.add_theme_font_size_override("font_size", 13)
 	b.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	# R6: 尝试加载 PNG 图标(48×48 EVE 渲染风); 无图标时退化为纯文字
+	var icons := preload("res://scripts/ui/EconIcons.gd")
+	var icon: Texture2D = icons.module_icon(id)
+	if icon != null:
+		b.icon = icon
+		b.expand_icon = false
+		b.text = ""   # 有图标时不显示文字(图标即语义)
 	b.pressed.connect(_open_module_panel.bind(id, true))
 	b.set_meta("module_id", id)
 	return b
