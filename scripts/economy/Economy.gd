@@ -1076,7 +1076,7 @@ func _log_trade(gid: String, price: float, qty: int) -> void:
 		trade_log = trade_log.slice(trade_log.size() - 200)
 
 
-func save_game() -> void:
+func save_game() -> bool:
 	var data := {
 		"v": 1,
 		"money": money, "day": day, "fuel": fuel, "inv": inv,
@@ -1089,9 +1089,12 @@ func save_game() -> void:
 		"module_jobs": module_jobs,
 	}
 	var file := FileAccess.open(save_path, FileAccess.WRITE)
-	if file:
-		file.store_string(JSON.stringify(data))
-		file.close()
+	if file == null:
+		push_warning("Economy: 存档写入失败(%s)" % save_path)
+		return false
+	file.store_string(JSON.stringify(data))
+	file.close()
+	return true
 
 
 func load_game() -> void:

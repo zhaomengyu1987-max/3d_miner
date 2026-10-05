@@ -219,41 +219,49 @@ func _refresh_pool() -> void:
 
 # ── 雇佣 / 解雇 ──
 
-## 动钱后立即同步经济自档(审查 R3-P1: 钱包唯一权威 = economy_save.json,
-## MissionOps 不再在 GameSave 存钱包; 每次变更即刻落盘, 关窗/崩溃零窗口)
-func _persist_economy() -> void:
+## 动钱后立即同步经济自档; 返回 false = 经济存档写入失败(R5-P1)
+func _persist_economy() -> bool:
 	if Economy.has_method("save_game"):
-		Economy.save_game()
+		return bool(Economy.save_game())
+	return true
 
 
 func hire_captain(candidate_cid: String) -> Dictionary:
-	# 先拷贝目标再操作(不在 for-in 中 erase 原数组——脆弱模式)
+	var target_idx := -1
 	var target: Dictionary = {}
-	for c in recruit_pool:
-		if c["cid"] == candidate_cid:
-			target = c
+	for i in range(recruit_pool.size()):
+		if recruit_pool[i]["cid"] == candidate_cid:
+			target = recruit_pool[i]
+			target_idx = i
 			break
 	if target.is_empty():
 		return {"ok": false, "why": "候选不存在"}
 	var fee := float(target["fee"])
 	if Economy.money < fee:
 		return {"ok": false, "why": "资金不足(押金 %d)" % int(fee)}
-	# ── 安全顺序(R4-P1): 先改内存+同步落盘 missionops(检查结果), 再动钱 ──
-	# 保存失败 → 回滚内存, 钱不动; 成功后再扣钱+存经济(此点崩溃=免费舰长, 不通胀)
+	# 三阶段(R5): 改内存→存missionops→存经济; 任一失败全量回滚
+	var snap_seq := _cap_seq
 	_cap_seq += 1
 	var cid := "cap_%03d" % _cap_seq
 	captains[cid] = {"name": target["name"], "tier": target["tier"], "spec": target["spec"],
 		"level": 1, "exp": 0, "status": "idle"}
-	recruit_pool.erase(target)
+	recruit_pool.remove_at(target_idx)
 	var gs := get_node_or_null("/root/GameSave")
 	if gs and not gs.save_now():
-		# missionops 落盘失败 → 回滚, 钱不动
 		captains.erase(cid)
-		_cap_seq -= 1
-		recruit_pool.append(target)
-		return {"ok": false, "why": "存档写入失败, 雇佣已取消(保护钱包)"}
+		_cap_seq = snap_seq
+		recruit_pool.insert(target_idx, target)
+		return {"ok": false, "why": "任务档写入失败, 雇佣已取消"}
 	Economy.add_money(-fee)
-	_persist_economy()
+	if not _persist_economy():
+		Economy.add_money(fee)
+		captains.erase(cid)
+		_cap_seq = snap_seq
+		recruit_pool.insert(target_idx, target)
+		if gs:
+			gs.save_now()
+		push_warning("MissionOps: 经济存档失败, 雇佣已回滚")
+		return {"ok": false, "why": "经济档写入失败, 雇佣已取消(保护钱包)"}
 	captain_state_changed.emit(cid, "hired")
 	return {"ok": true, "cid": cid}
 
@@ -263,26 +271,34 @@ func dismiss_captain(cid: String) -> Dictionary:
 		return {"ok": false, "why": "舰长不存在"}
 	if captains[cid]["status"] != "idle":
 		return {"ok": false, "why": "在途舰长不可解雇"}
-	# ── 安全顺序(R4-P1): 先删舰长+解散编队+同步落盘(检查), 退款后给 ──
-	# 保存失败 → 回滚, 退款不发; 成功后退款(此点崩溃=丢退款, 不双给)
+	# 完整快照(R5-P2: 恢复原状态而非重建)
+	var cap_snapshot: Dictionary = captains[cid].duplicate()
+	var teams_snapshot: Dictionary = {}
 	var disbanded: Array[String] = []
 	for tid in teams.keys():
 		if teams[tid]["captain_id"] == cid:
 			disbanded.append(tid)
+			teams_snapshot[tid] = (teams[tid] as Dictionary).duplicate()
 	for tid in disbanded:
 		teams.erase(tid)
-	var cap_snapshot: Dictionary = captains[cid].duplicate()
 	var fee: float = MissionDefs.TIERS[cap_snapshot["tier"]]["hire_fee"] * 0.5
 	captains.erase(cid)
 	var gs := get_node_or_null("/root/GameSave")
 	if gs and not gs.save_now():
-		# missionops 落盘失败 → 回滚, 退款不发
 		captains[cid] = cap_snapshot
-		for tid in disbanded:
-			teams[tid] = {"name": "恢复", "captain_id": cid}
-		return {"ok": false, "why": "存档写入失败, 解雇已取消(保护退款)"}
+		for tid in teams_snapshot:
+			teams[tid] = teams_snapshot[tid]
+		return {"ok": false, "why": "任务档写入失败, 解雇已取消"}
 	Economy.add_money(fee)
-	_persist_economy()
+	if not _persist_economy():
+		Economy.add_money(-fee)
+		captains[cid] = cap_snapshot
+		for tid in teams_snapshot:
+			teams[tid] = teams_snapshot[tid]
+		if gs:
+			gs.save_now()
+		push_warning("MissionOps: 经济存档失败, 解雇已回滚")
+		return {"ok": false, "why": "经济档写入失败, 解雇已取消(保护退款)"}
 	captain_state_changed.emit(cid, "dismissed")
 	return {"ok": true, "disbanded": disbanded}
 
@@ -370,20 +386,23 @@ func _resolve(mid: String) -> void:
 		"seed": int(mis["seed"]), "captain": cap.get("name", "?"),
 		"duration": float(mis["dur"]),
 	}
-	# ── 第一步: 任务出册 + 舰长状态 + 同步落盘(检查结果, 失败放回+中止) ──
+	# 第一步: 任务出册 + 舰长状态 + 同步落盘(检查结果, 失败放回+中止)
+	var snap_done := int(stats["done"])
+	var snap_failed := int(stats["failed"])
+	var snap_ep := int(exploration["ep"])
+	var snap_status: String = captains[cid]["status"] if captains.has(cid) else ""
 	active.erase(mid)
 	if captains.has(cid):
 		captains[cid]["status"] = "idle"
 		captain_state_changed.emit(cid, "idle")
 	var gs := get_node_or_null("/root/GameSave")
 	if gs and not gs.save_now():
-		# 落盘失败 → 放回任务, 不发奖励, 下帧重试
 		active[mid] = mis
 		if captains.has(cid):
-			captains[cid]["status"] = "on_mission"
+			captains[cid]["status"] = snap_status
 		push_warning("MissionOps: 结算落盘失败, 任务放回重试(mid=%s)" % mid)
 		return
-	# ── 第二步: 发奖励(此点之后崩溃丢奖励, 不双给) ──
+	# 第二步: 发奖励; 经济存档失败 → 全量回滚, 任务放回重试(R5-P1)
 	if success:
 		var ep := int(def["ep"])
 		var credits := float(def["credits"])
@@ -393,7 +412,18 @@ func _resolve(mid: String) -> void:
 		stats["done"] += 1
 		_give_captain_exp(cid, 30)
 		Economy.add_money(credits)
-		_persist_economy()
+		if not _persist_economy():
+			Economy.add_money(-credits)
+			exploration["ep"] = snap_ep
+			stats["done"] = snap_done
+			stats["failed"] = snap_failed
+			active[mid] = mis
+			if captains.has(cid):
+				captains[cid]["status"] = snap_status
+			if gs:
+				gs.save_now()
+			push_warning("MissionOps: 经济存档失败, 结算已回滚(mid=%s)" % mid)
+			return
 	else:
 		report["ep"] = 0
 		report["credits"] = 0
