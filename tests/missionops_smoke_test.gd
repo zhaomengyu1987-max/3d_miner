@@ -270,6 +270,93 @@ func _run_all() -> void:
 			mo._catch_up(mo._now())
 			_check("恢复后: 任务正常结算", not mo.active.has(mid19))
 
+	# ⑳ 经济存档失败回滚(自查 P2: R5 修复此前无测试覆盖)
+	# 方法: 重定向 Economy.save_path 到无效目录 → save_game 返回 false
+	var orig_save_path: String = Economy.save_path
+	Economy.save_path = "user://nonexistent_subdir_xyz/fail.json"
+
+	# ⑳-a 雇佣: 经济失败 → 钱未扣+舰长未加+池首位恢复
+	var money_20: float = Economy.money
+	var caps_20: int = mo.captains.size()
+	var pool_20_first: String = str(mo.recruit_pool[0]["cid"]) if not mo.recruit_pool.is_empty() else ""
+	_check("⑳前置: 池非空", not mo.recruit_pool.is_empty())
+	if not mo.recruit_pool.is_empty():
+		var r20: Dictionary = mo.hire_captain(mo.recruit_pool[0]["cid"])
+		_check("经济失败: 雇佣被拒", not bool(r20.get("ok", false)))
+		_check("经济失败: 钱未扣", Economy.money == money_20)
+		_check("经济失败: 舰长未加", mo.captains.size() == caps_20)
+		_check("经济失败: 池首位恢复", not mo.recruit_pool.is_empty()
+			and str(mo.recruit_pool[0]["cid"]) == pool_20_first)
+
+	# ⑳-b 恢复后正常雇佣
+	Economy.save_path = orig_save_path
+	var r20b: Dictionary = mo.hire_captain(mo.recruit_pool[0]["cid"]) if not mo.recruit_pool.is_empty() else {}
+	_check("⑳恢复: 雇佣成功", bool(r20b.get("ok", false)))
+
+	# ⑳-c 解雇: 经济失败 → 退款未发+舰长仍在
+	var caps_20c: int = mo.captains.size()
+	var money_20c: float = Economy.money
+	var idle_20 := ""
+	for c in mo.captains:
+		if mo.captains[c]["status"] == "idle":
+			idle_20 = c
+			break
+	_check("⑳-c前置: 有 idle 舰长", idle_20 != "")
+	if idle_20 != "":
+		Economy.save_path = "user://nonexistent_subdir_xyz/fail.json"
+		var r20c: Dictionary = mo.dismiss_captain(idle_20)
+		_check("经济失败: 解雇被拒", not bool(r20c.get("ok", false)))
+		_check("经济失败: 退款未发", Economy.money == money_20c)
+		_check("经济失败: 舰长仍在", mo.captains.size() == caps_20c)
+		Economy.save_path = orig_save_path
+
+	# ⑳-d 结算: 经济失败 → 奖励撤回+任务放回+经验恢复
+	var tid20 := ""
+	for t in mo.teams:
+		if not mo._team_busy(t):
+			tid20 = t
+			break
+	_check("⑳-d前置: 有空闲编队", tid20 != "")
+	if tid20 != "":
+		var r20d: Dictionary = mo.dispatch(tid20, "mo_survey_ice", 888)
+		_check("⑳-d前置: 派遣成功", bool(r20d.get("ok", false)))
+		if bool(r20d.get("ok", false)):
+			var mid20: String = r20d.get("mission_id", "")
+			var done_20 := int(mo.stats["done"])
+			var exp_20 := int(mo.exploration["ep"])
+			var cap_20_cid: String = mo.active[mid20]["cid"]
+			var cap_20_snap: Dictionary = mo.captains[cap_20_cid].duplicate()
+			# 找必胜 seed 保证走成功路径
+			var win_20 := _find_succeeding_seed("mo_survey_ice", cap_20_cid)
+			if win_20 >= 0:
+				# 撤回当前派遣, 重新用必胜 seed
+				mo.active.erase(mid20)
+				mo.captains[cap_20_cid]["status"] = "idle"
+				var r20w: Dictionary = mo.dispatch(tid20, "mo_survey_ice", win_20)
+				if bool(r20w.get("ok", false)):
+					mid20 = r20w.get("mission_id", "")
+					done_20 = int(mo.stats["done"])
+					exp_20 = int(mo.exploration["ep"])
+					Economy.save_path = "user://nonexistent_subdir_xyz/fail.json"
+					mo.now_override_sec = float(mo.active[mid20]["ends_wall"]) + 1.0
+					mo._catch_up(mo._now())
+					_check("经济失败: 任务放回", mo.active.has(mid20))
+					_check("经济失败: 结算数未变", int(mo.stats["done"]) == done_20)
+					_check("经济失败: EP未变", int(mo.exploration["ep"]) == exp_20)
+					_check("经济失败: 舰长经验恢复",
+						int(mo.captains[cap_20_cid]["exp"]) == int(cap_20_snap["exp"]))
+					Economy.save_path = orig_save_path
+					# 恢复后正常结算
+					mo._catch_up(mo._now())
+					_check("⑳恢复: 任务正常结算", not mo.active.has(mid20))
+			else:
+				_check("⑳-d: 找到必胜seed", false)  # 显式报 FAIL
+		Economy.save_path = orig_save_path
+
+	# 收尾清理
+	Economy.save_path = orig_save_path
+	gs.write_suspended = false
+
 	print("== 结果: %s (fails=%d) ==" % ["PASS" if _fails == 0 else "FAIL", _fails])
 	get_tree().quit(0 if _fails == 0 else 1)
 
