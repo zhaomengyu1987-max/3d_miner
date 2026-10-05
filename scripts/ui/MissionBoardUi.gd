@@ -98,8 +98,8 @@ func _one_click_prep() -> void:
 		if MissionOps.captains[c]["status"] == "idle" and not _cap_in_team(c):
 			cid = c
 			break
-	if cid == "" and MissionOps.teams.size() >= MissionDefs.MAX_TEAMS:
-		_flash("行动舰队已满(%d 队)——先完成在途任务或扩容巢穴" % MissionDefs.MAX_TEAMS)
+	if cid == "" and MissionOps.teams.size() >= MissionOps.fleet_cap():
+		_flash("行动舰队已满(%d 队)——先完成在途任务或升级雇佣兵巢穴" % MissionOps.fleet_cap())
 		return
 	if cid == "":
 		if MissionOps.recruit_pool.is_empty():
@@ -147,6 +147,8 @@ func _refresh() -> void:
 	var idle := MissionOps.first_idle_team()
 	if idle != "":
 		_team_lab.text = "编队: %s · 在岗" % MissionOps.teams[idle]["name"]
+	elif MissionOps.fleet_cap() == 0:
+		_team_lab.text = "编队: [需要雇佣兵巢穴]——空间站建造解锁探索派遣"
 	else:
 		_team_lab.text = "编队: 无可用(先一键备战)"
 	for tid in MissionDefs.TASKS:

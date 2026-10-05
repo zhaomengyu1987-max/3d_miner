@@ -26,6 +26,10 @@ func _run_all() -> void:
 	print("== MissionOps M1 冒烟 ==")
 	var mo := MissionOps
 	mo.reset_state()                       # 测试确定性: 清掉上次运行残留
+	# 模拟已建雇佣兵巢穴 Lv2(2 队容量)——生产路径是建造, 测试直接设等级
+	if Economy.modules.has("hive"):
+		Economy.modules["hive"]["level"] = 2
+		Economy.modules["hive"]["built"] = true
 	# 上轮 ⑯ 可能留下坏档+写入挂起 → 本轮先恢复可写并落一个干净基线档
 	get_node("/root/GameSave").write_suspended = false
 	get_node("/root/GameSave").save_now()
@@ -34,6 +38,9 @@ func _run_all() -> void:
 
 	# ① 环境前置: 钱包注资(测试专用, 不走生产路径)
 	Economy.money = 100000.0
+
+	# ②-0 巢穴门控: fleet_cap 读到 hive_level
+	_check("巢穴门控: fleet_cap = hive_level", mo.fleet_cap() == 2)
 
 	# ② 招募池: 非空且 ≤3
 	_check("招募池非空且≤3", not mo.recruit_pool.is_empty() and mo.recruit_pool.size() <= 3)

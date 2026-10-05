@@ -979,6 +979,11 @@ func module_level(id: String) -> int:
 	return int(modules[id]["level"]) if modules.has(id) else 0
 
 
+## 雇佣兵巢穴等级(蓝图 §5.9): MissionOps 行动舰队容量的唯一来源
+func hive_level() -> int:
+	return module_level("hive")
+
+
 func module_count(id: String) -> int:
 	return int(modules[id]["count"]) if modules.has(id) else 0
 
