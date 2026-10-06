@@ -177,6 +177,11 @@ func _equip_row(equip: String) -> Control:
 		b.disabled = reason != ""
 		b.tooltip_text = reason
 		ops.add_child(b)
+	# 禁用原因直接显示(不用悬停)
+	var block_reason := Economy.production_block_reason(equip, 5)
+	if block_reason != "":
+		var why := EconTheme.label("×5受限: %s" % block_reason, EconTheme.BAD, 11)
+		ops.add_child(why)
 	return card
 
 
