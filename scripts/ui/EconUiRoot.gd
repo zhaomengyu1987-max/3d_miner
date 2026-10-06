@@ -583,6 +583,13 @@ func _toggle_popup_collapse() -> void:
 
 ## 悬浮窗按钮 → 建成开对应面板, 未建进建造面板（悬浮窗保持显示）
 func _open_module_panel(id: String, keep_popup := false) -> void:
+	# MVP: 巢穴 → 行动中心(与F6同一窗口)
+	if id == "hive":
+		var ac := get_node_or_null("/root/MissionOps/ActionCenterUi")
+		if ac:
+			ac.visible = true
+			hide_station_popup()
+		return
 	# 多开: 模块入口也用叠加打开（建了开对应面板, 未建进建造面板）
 	match id:
 		"hangar":
