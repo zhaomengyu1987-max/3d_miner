@@ -63,7 +63,7 @@ const PRODUCTS := {
 		"bom": {"commonC": 60, "rareD": 35, "commonB": 25}, "time": 360.0, "price": 3100.0},
 	# ---------- MissionOps 子系统装备(MVP: 建造厂可制造) ----------
 	"eq_power_mk1": {"name": "标准反应堆", "batch": 1,
-		"bom": {"rareD": 40, "fueltank": 1}, "time": 240.0, "price": 900.0, "is_equip": true},
+		"bom": {"commonC": 50, "fueltank": 1}, "time": 240.0, "price": 900.0, "is_equip": true},
 	"eq_elec_mk1": {"name": "基础传感阵列", "batch": 1,
 		"bom": {"rareB": 40, "ecu": 1}, "time": 240.0, "price": 1000.0, "is_equip": true},
 	"eq_weapon_mk1": {"name": "制式火控组", "batch": 1,

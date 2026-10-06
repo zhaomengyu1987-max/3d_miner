@@ -136,7 +136,7 @@ const SPEC_LABEL := {
 # ── 子系统装备(§15, M2: MK1 四件 + 资格门槛) ──
 const EQUIPMENT := {
 	"eq_power_mk1":   {"label": "标准反应堆", "slot": "power", "tier": "T1",
-		"bom": {"rareD": 40, "fueltank": 1}, "time": 240.0, "price": 900.0,
+		"bom": {"commonC": 50, "fueltank": 1}, "time": 240.0, "price": 900.0,
 		"desc": "资格件: 舰船启用必需(无能源=死船)"},
 	"eq_elec_mk1":    {"label": "基础传感阵列", "slot": "elec", "tier": "T1",
 		"bom": {"rareB": 40, "ecu": 1}, "time": 240.0, "price": 1000.0,
