@@ -17,12 +17,12 @@ const SHIP_NOSE_FIX := PI      # 模型头向校正(look_at 后 -Z 对站; 若�
 const SHIP_APPROACH_SPD := 6.0  # 进港速度 m/s（缩小世界快节奏）
 const SHIP_DEPART_SPD := 6.0    # 离港速度 m/s
 const SHIP_DEPART_BACK := 6.0   # 离港先径向后退距离(再转身走)
-const SHIP_LEN := {"small": 5.0, "standard": 5.8, "heavy": 6.4, "giant": 7.0}  # 各型号目标长度(米) [2026-10-03 拍板: 5-7m]
+const SHIP_LEN := {"small": 0.875, "standard": 1.0, "heavy": 1.125, "giant": 1.25}  # 各型号目标长度(米) [2026-10-05 再拍板: 全舰÷4]
 const HULL_COLOR := Color(0.58, 0.64, 0.74)  # 无材质低模的中性船壳色
 ## 站体点击判定半径(米): 覆盖 athanor 站体, 与避让半径同量级
 const STATION_CLICK_RADIUS := 6.0
 ## 空点兜底: 鼠标点击位置与站心屏幕投影距离小于该值也算点站(像素)
-const STATION_CLICK_PIXELS := 90.0
+# R8: STATION_CLICK_PIXELS 已删除(空点兜底导致点太空触发菜单)
 
 var _hub: Node3D
 var _belt: BeltFlow  # 无人机/护卫舰取目标用
@@ -267,15 +267,9 @@ func _try_open_station_menu() -> void:
 	var hit := get_world_3d().direct_space_state.intersect_ray(params)
 	if hit and (hit["collider"] is BeltOre):
 		return  # 点在矿石上: 玩家在捕获, 不弹菜单
+	# R8 修复: 严格只允许射线命中站体碰撞球才弹菜单
+	# 删除"空点兜底"(原 90px 屏幕距离导致点太空也触发)
 	if hit and hit["collider"] == _station_body:
-		_open_station_menu(mouse)
-		return
-	# 空点兜底: 点击屏幕位置贴近站心投影
-	var center := _hub.global_position
-	if cam.is_position_behind(center):
-		return
-	var sp := cam.unproject_position(center)
-	if sp.distance_to(mouse) <= STATION_CLICK_PIXELS:
 		_open_station_menu(mouse)
 
 
