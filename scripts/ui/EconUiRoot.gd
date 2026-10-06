@@ -420,9 +420,10 @@ func _build_popup() -> void:
 	grid.add_theme_constant_override("v_separation", 8)
 	scroll.add_child(grid)
 	# 功能入口（HUD 按键已全部移除, 统一走悬浮窗）
-	grid.add_child(_make_function_button("仓库", "inventory"))
-	grid.add_child(_make_function_button("空间站建造", "build"))
-	grid.add_child(_make_function_button("我的订单", "orders"))
+	var fn_icons := preload("res://scripts/ui/EconIcons.gd")
+	grid.add_child(_make_fn_icon_button(fn_icons.png_icon("inventory"), "仓库", "inventory"))
+	grid.add_child(_make_fn_icon_button(fn_icons.png_icon("build"), "空间站建造", "build"))
+	grid.add_child(_make_fn_icon_button(fn_icons.png_icon("orders"), "我的订单", "orders"))
 	# 图标入口走"代码手绘像素画"（EconIcons）: 原实现引用 res://assets/icons/market_logo.svg,
 	# 而该文件从未存在 ⇒ Button.icon = null ⇒ 按钮空白（2026-10-02 修）。
 	# 这里用 preload 而不是全局类名: 新建脚本的 class_name 要等编辑器扫描后才会进
@@ -485,6 +486,14 @@ func _make_icon_button(icon: Texture2D, panel_id: String, tip: String, module_id
 
 
 ## 功能入口按钮（无建成状态, 高亮样式）
+func _make_fn_icon_button(icon: Texture2D, text: String, panel_id: String) -> Button:
+	var b := _make_function_button(text, panel_id)
+	if icon != null:
+		b.icon = icon
+		b.expand_icon = false
+	return b
+
+
 func _make_function_button(text: String, panel_id: String) -> Button:
 	var b := Button.new()
 	b.text = text
@@ -513,7 +522,7 @@ func _make_module_button(id: String) -> Button:
 	if icon != null:
 		b.icon = icon
 		b.expand_icon = false
-		b.text = ""   # 有图标时不显示文字(图标即语义)
+		b.text = str(GameData.MODULES[id]["name"])   # 图标+文字并列
 	b.pressed.connect(_open_module_panel.bind(id, true))
 	b.set_meta("module_id", id)
 	return b
