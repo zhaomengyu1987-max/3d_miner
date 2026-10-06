@@ -451,24 +451,35 @@ func _make_station_button(icon: Texture2D, text: String, panel_id: String, modul
 	var b := Button.new()
 	b.custom_minimum_size = Vector2(108, 64)
 	b.tooltip_text = text
-	# 图标 + 文字并列
+	# 图标(默认只显示图标, 不显示文字)
 	if icon != null:
 		b.icon = icon
 		b.expand_icon = false
 		b.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		b.vertical_icon_alignment = VERTICAL_ALIGNMENT_CENTER
-	b.text = text
-	b.add_theme_font_size_override("font_size", 12)
-	b.add_theme_color_override("font_color", EconTheme.TEXT)
-	b.add_theme_color_override("font_hover_color", EconTheme.ACCENT)
-	# 统一样式(圆角6/同色系)
+	else:
+		b.text = text   # 无图标时退化纯文字
+		b.add_theme_font_size_override("font_size", 12)
+		b.add_theme_color_override("font_color", EconTheme.TEXT)
+	# 统一样式: 默认正常, hover 变暗 + Photon 边框
 	b.add_theme_stylebox_override("normal", EconTheme.style_box(EconTheme.PANEL2, EconTheme.BORDER.darkened(0.3), 6))
-	b.add_theme_stylebox_override("hover", EconTheme.style_box(EconTheme.PANEL2.lightened(0.1), Color("58A7BF"), 6))
-	b.add_theme_stylebox_override("pressed", EconTheme.style_box(EconTheme.PANEL2.darkened(0.1), Color("58A7BF"), 6))
+	b.add_theme_stylebox_override("hover", EconTheme.style_box(EconTheme.PANEL2.darkened(0.15), Color("58A7BF"), 6))
+	b.add_theme_stylebox_override("pressed", EconTheme.style_box(EconTheme.PANEL2.darkened(0.25), Color("58A7BF"), 6))
 	b.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
-	# hover 亮化
-	b.mouse_entered.connect(func(): b.modulate = Color(1.2, 1.2, 1.2))
-	b.mouse_exited.connect(func(): b.modulate = Color.WHITE)
+	# hover 行为: 按钮变暗 + 底部高亮浮字(R8)
+	var tip_l := EconTheme.label(text, Color("58A7BF"), 13)
+	tip_l.visible = false
+	tip_l.position = Vector2(6, 52)   # 按钮底部内嵌
+	tip_l.z_index = 50
+	b.add_child(tip_l)
+	b.mouse_entered.connect(func():
+		b.modulate = Color(0.75, 0.75, 0.75)   # 变暗
+		tip_l.visible = true                     # 高亮浮字出现
+	)
+	b.mouse_exited.connect(func():
+		b.modulate = Color.WHITE
+		tip_l.visible = false
+	)
 	# 点击行为
 	if module_id != "":
 		b.set_meta("module_id", module_id)
