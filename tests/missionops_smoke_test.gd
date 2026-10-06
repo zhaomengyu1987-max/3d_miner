@@ -426,18 +426,26 @@ func _run_all() -> void:
 	_check("㉖ 兑换成功", bool(re26.get("ok", false)))
 	_check("㉖ 逆向素材+1", int(mo.inventory.get("reverse_material", 0)) >= 1)
 
-	# ㉗ 部分成功(需要 seed 落在 partial 区)
+	# ㉗ 部分成功: 显式验证前置, 推进到冷却结束, 不允许派遣失败后静默跳过
 	var partial_seed := _find_partial_seed("mo_survey_ice", cid)
+	_check("㉗ 前置: 找到部分成功 seed", partial_seed >= 0)
 	if partial_seed >= 0:
-		mo.install_equipment(ship1, "eq_weapon_mk1")  # 确保有装备
+		var cd27 := float(mo.board["resident_cd"].get("mo_survey_ice", 0.0))
+		mo.now_override_sec = maxf(mo._now(), cd27) + 1.0
+		var money27: float = Economy.money
+		var ep27 := mo.ep()
 		var rp: Dictionary = mo.dispatch(tid, "mo_survey_ice", partial_seed)
+		_check("㉗ 前置: 冷却结束后派遣成功", bool(rp.get("ok", false)))
 		if bool(rp.get("ok", false)):
 			mo.now_override_sec = float(mo.active[rp["mission_id"]]["ends_wall"]) + 1.0
-			await get_tree().process_frame
+			mo._catch_up(mo._now())
 			var rep: Dictionary = mo._last_report
 			_check("㉗ 部分成功标记", rep.get("partial", false) == true)
 			_check("㉗ 部分成功有奖励", float(rep.get("credits", 0)) > 0)
 			_check("㉗ 部分奖励 < 全额", float(rep.get("credits", 0)) < float(MissionDefs.TASKS["mo_survey_ice"]["credits"]))
+			_check("㉗ 部分奖励实际入账", is_equal_approx(Economy.money - money27,
+				float(MissionDefs.TASKS["mo_survey_ice"]["credits"]) * 0.6))
+			_check("㉗ 部分 EP 实际入账", mo.ep() - ep27 == int(float(MissionDefs.TASKS["mo_survey_ice"]["ep"]) * 0.6))
 
 	# ㉘ 三层板冷却
 	var board_tasks: Array[Dictionary] = mo.get_board_tasks()
@@ -476,6 +484,12 @@ func _run_all() -> void:
 			_check("㉙ 远征材料掉落", int(mo.inventory.get("exp_elec", 0)) > mat_before)
 			_check("㉙ 勘测任务出发现物", mo.discovery_count() > disc_before)
 
+	# 退役保存失败必须恢复船、装备、编队成员及经济库存, 包括再次读档后的状态
+	var fitted30: Dictionary = mo.install_equipment(ship2, "eq_weapon_mk1")
+	_check("退役回滚前置: 舰船已装武器", bool(fitted30.get("ok", false)))
+	_check_decommission_rollback(ship2, false)
+	_check_decommission_rollback(ship2, true)
+
 	# ㉚ 舰船退役
 	var fleet_before: int = mo.ship_count()
 	var rd30: Dictionary = mo.decommission_ship(ship2)
@@ -486,6 +500,46 @@ func _run_all() -> void:
 	print("== 结果: %s (fails=%d) ==" % ["PASS" if _fails == 0 else "FAIL", _fails])
 	get_tree().quit(0 if _fails == 0 else 1)
 
+
+func _check_decommission_rollback(ship_uid: String, fail_economy: bool) -> void:
+	var mo := MissionOps
+	var gs := get_node("/root/GameSave")
+	var label := "退役回滚(经济档失败)" if fail_economy else "退役回滚(任务档失败)"
+	var in_team := false
+	for team in mo.teams.values():
+		if team.get("ship_uids", []).has(ship_uid):
+			in_team = true
+			break
+	_check(label + ": 前置舰船在编队", in_team and mo.fleet.has(ship_uid)
+		and not mo.is_ship_on_mission(ship_uid))
+	var snapshot: Dictionary = mo._get_state().duplicate(true)
+	var econ_snapshot: Dictionary = Economy.inv.duplicate(true)
+	var mission_saved: bool = gs.save_now()
+	var economy_saved := Economy.save_game()
+	_check(label + ": 基线已落盘", mission_saved and economy_saved)
+	var save_path_before := Economy.save_path
+	var suspended_before: bool = gs.write_suspended
+	if fail_economy:
+		Economy.save_path = "user://nonexistent_subdir_xyz/decommission_fail.json"
+	else:
+		gs.write_suspended = true
+	var result: Dictionary = mo.decommission_ship(ship_uid)
+	Economy.save_path = save_path_before
+	gs.write_suspended = suspended_before
+	_check(label + ": 操作被拒", not bool(result.get("ok", false)))
+	_check(label + ": 完整编队恢复", mo.teams == snapshot["teams"])
+	_check(label + ": 舰船及装备恢复", mo.fleet == snapshot["fleet"])
+	_check(label + ": 装备库存恢复", mo.inventory == snapshot["inventory"])
+	_check(label + ": 经济库存恢复", Economy.inv == econ_snapshot)
+	gs._load_or_init()
+	Economy.load_game()
+	# JSON 回放将整数变为浮点数, 按相同序列化规则比较完整快照。
+	var saved_snapshot: Dictionary = JSON.parse_string(JSON.stringify(snapshot))
+	var saved_econ: Dictionary = JSON.parse_string(JSON.stringify(econ_snapshot))
+	_check(label + ": 读档后编队恢复", mo.teams == saved_snapshot["teams"])
+	_check(label + ": 读档后舰船及装备恢复", mo.fleet == saved_snapshot["fleet"]
+		and mo.inventory == saved_snapshot["inventory"])
+	_check(label + ": 读档后经济库存恢复", Economy.inv == saved_econ)
 
 func _roll_with(seed_v: int) -> bool:
 	# 与 MissionOps._resolve 相同的掷骰: 重放 seed 的第一个 randf 与任务成功率比较

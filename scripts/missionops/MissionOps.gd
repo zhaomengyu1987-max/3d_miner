@@ -679,10 +679,10 @@ func decommission_ship(uid: String) -> Dictionary:
 	if is_ship_on_mission(uid):
 		return {"ok": false, "why": "在途舰船不可退役"}
 	# 完整快照(R6-P1: 保存失败全量回滚, 不复制舰船)
-	var ship_snapshot: Dictionary = (fleet[uid] as Dictionary).duplicate()
+	var ship_snapshot: Dictionary = (fleet[uid] as Dictionary).duplicate(true)
 	var teams_snapshot: Dictionary = {}
-	var snap_inv := inventory.duplicate()
-	var snap_econ_inv := Economy.inv.duplicate()
+	var snap_inv := inventory.duplicate(true)
+	var snap_econ_inv := Economy.inv.duplicate(true)
 	var ship: Dictionary = fleet[uid]
 	# 自动卸装
 	for slot in ship["fitted"]:
@@ -692,7 +692,7 @@ func decommission_ship(uid: String) -> Dictionary:
 	# 从编队移除
 	for tid in teams:
 		if teams[tid].get("ship_uids", []).has(uid):
-			teams_snapshot[tid] = (teams[tid] as Dictionary).duplicate()
+			teams_snapshot[tid] = (teams[tid] as Dictionary).duplicate(true)
 			teams[tid]["ship_uids"].erase(uid)
 	var def_id: String = ship["def_id"]
 	fleet.erase(uid)
