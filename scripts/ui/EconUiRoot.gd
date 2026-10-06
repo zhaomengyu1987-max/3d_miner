@@ -449,12 +449,12 @@ func _build_popup() -> void:
 ## icon 可为 null(退化纯文字); module_id 非空 = 建筑模块入口(按建成状态染色)
 func _make_station_button(icon: Texture2D, text: String, panel_id: String, module_id := "") -> Button:
 	var b := Button.new()
-	b.custom_minimum_size = Vector2(108, 64)
+	b.custom_minimum_size = Vector2(65, 38)
 	b.tooltip_text = text
 	# 图标(默认只显示图标, 不显示文字)
 	if icon != null:
 		b.icon = icon
-		b.expand_icon = false
+		b.expand_icon = true    # 自动缩放适配小按钮
 		b.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		b.vertical_icon_alignment = VERTICAL_ALIGNMENT_CENTER
 	else:
