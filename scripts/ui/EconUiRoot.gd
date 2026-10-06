@@ -445,87 +445,56 @@ func _build_popup() -> void:
 ## 传 Texture2D 而不是路径 —— 曾经路径写错(文件不存在)导致按钮空白（2026-10-02 修）；
 ## 图标为 null 时退化成文字按钮，保证**永远不会再出现空白按钮**。
 ## module_id 非空 = 建筑模块入口（按建成状态染色, 未建时进建造面板）。
-func _make_icon_button(icon: Texture2D, panel_id: String, tip: String, module_id := "") -> Button:
+## 统一站点按钮(R7: 所有按钮同尺寸/同样式/图标+文字并列)
+## icon 可为 null(退化纯文字); module_id 非空 = 建筑模块入口(按建成状态染色)
+func _make_station_button(icon: Texture2D, text: String, panel_id: String, module_id := "") -> Button:
 	var b := Button.new()
 	b.custom_minimum_size = Vector2(108, 64)
-	b.tooltip_text = tip
-	# Button 非容器, 子 TextureRect 实际 size=0 → 曾显示空按钮;
-	# 正确做法=Button 内置 icon 槽 + 双向居中
+	b.tooltip_text = text
+	# 图标 + 文字并列
 	if icon != null:
 		b.icon = icon
-		b.expand_icon = false    # 48×48 原尺寸绘制: 放大已在 EconIcons 里做整倍 nearest, 不再二次缩放
+		b.expand_icon = false
 		b.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		b.vertical_icon_alignment = VERTICAL_ALIGNMENT_CENTER
-		b.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST   # 像素画保持锐利
-	else:
-		b.text = tip
-		b.add_theme_font_size_override("font_size", 13)
-		b.add_theme_color_override("font_color", EconTheme.TEXT)
-	b.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	b.text = text
+	b.add_theme_font_size_override("font_size", 12)
+	b.add_theme_color_override("font_color", EconTheme.TEXT)
+	b.add_theme_color_override("font_hover_color", EconTheme.ACCENT)
+	# 统一样式(圆角6/同色系)
 	b.add_theme_stylebox_override("normal", EconTheme.style_box(EconTheme.PANEL2, EconTheme.BORDER.darkened(0.3), 6))
 	b.add_theme_stylebox_override("hover", EconTheme.style_box(EconTheme.PANEL2.lightened(0.1), Color("58A7BF"), 6))
 	b.add_theme_stylebox_override("pressed", EconTheme.style_box(EconTheme.PANEL2.darkened(0.1), Color("58A7BF"), 6))
-	# 自定义 hover 浮字（即时, 非系统 tooltip 延迟）
-	var tip_l := EconTheme.label(tip, Color("58A7BF"), 13)
-	tip_l.visible = false
-	tip_l.position = Vector2(8, -22)
-	tip_l.z_index = 50
-	b.add_child(tip_l)
-	b.mouse_entered.connect(func():
-		tip_l.visible = true
-		b.modulate = Color(1.25, 1.25, 1.25))
-	b.mouse_exited.connect(func():
-		tip_l.visible = false
-		b.modulate = Color.WHITE)
+	b.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	# hover 亮化
+	b.mouse_entered.connect(func(): b.modulate = Color(1.2, 1.2, 1.2))
+	b.mouse_exited.connect(func(): b.modulate = Color.WHITE)
+	# 点击行为
 	if module_id != "":
-		b.set_meta("module_id", module_id)     # _refresh_popup_buttons 据此刷新建成状态配色
+		b.set_meta("module_id", module_id)
 		b.pressed.connect(_open_module_panel.bind(module_id, true))
 	else:
 		b.pressed.connect(func(): open_panel_add(panel_id, true))
 	return b
 
 
-## 功能入口按钮（无建成状态, 高亮样式）
+## 兼容旧调用(R7 统一后保留接口)
+func _make_icon_button(icon: Texture2D, panel_id: String, tip: String, module_id := "") -> Button:
+	return _make_station_button(icon, tip, panel_id, module_id)
+
+
 func _make_fn_icon_button(icon: Texture2D, text: String, panel_id: String) -> Button:
-	var b := _make_function_button(text, panel_id)
-	if icon != null:
-		b.icon = icon
-		b.expand_icon = false
-	return b
+	return _make_station_button(icon, text, panel_id)
 
 
 func _make_function_button(text: String, panel_id: String) -> Button:
-	var b := Button.new()
-	b.text = text
-	b.custom_minimum_size = Vector2(108, 64)
-	b.add_theme_font_size_override("font_size", 13)
-	b.add_theme_color_override("font_color", EconTheme.TEXT)
-	b.add_theme_color_override("font_hover_color", EconTheme.ACCENT)
-	b.add_theme_stylebox_override("normal", EconTheme.style_box(EconTheme.PANEL2, EconTheme.ACCENT.darkened(0.25), 6))
-	b.add_theme_stylebox_override("hover", EconTheme.style_box(EconTheme.PANEL2.lightened(0.08), EconTheme.ACCENT, 6))
-	b.add_theme_stylebox_override("pressed", EconTheme.style_box(EconTheme.PANEL2.darkened(0.1), EconTheme.ACCENT, 6))
-	b.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
-	# 打开面板时不关闭悬浮窗、也不关闭其它面板（2026-09-30 拍板 + 2026-10-02 多开拍板）
-	b.pressed.connect(func(): open_panel_add(panel_id, true))
-	return b
+	return _make_station_button(null, text, panel_id)
 
 
 func _make_module_button(id: String) -> Button:
-	var b := Button.new()
-	b.text = str(GameData.MODULES[id]["name"])
-	b.custom_minimum_size = Vector2(108, 64)
-	b.add_theme_font_size_override("font_size", 13)
-	b.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
-	# R6: 尝试加载 PNG 图标(48×48 EVE 渲染风); 无图标时退化为纯文字
 	var icons := preload("res://scripts/ui/EconIcons.gd")
 	var icon: Texture2D = icons.module_icon(id)
-	if icon != null:
-		b.icon = icon
-		b.expand_icon = false
-		b.text = str(GameData.MODULES[id]["name"])   # 图标+文字并列
-	b.pressed.connect(_open_module_panel.bind(id, true))
-	b.set_meta("module_id", id)
-	return b
+	return _make_station_button(icon, str(GameData.MODULES[id]["name"]), id, id)
 
 
 ## 每次弹出时按建成状态刷新按钮配色
