@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+<defs>
+    <filter id="g1" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="2" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="g2" x="-90%" y="-90%" width="280%" height="280%">
+      <feGaussianBlur stdDeviation="4.5" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <linearGradient id="hull" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#26374a"/><stop offset="100%" stop-color="#0c141d"/>
+    </linearGradient>
+    <radialGradient id="engG">
+      <stop offset="0%" stop-color="#d8f6ff"/><stop offset="45%" stop-color="#58a7bf" stop-opacity=".85"/>
+      <stop offset="100%" stop-color="#58a7bf" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="bgR" cx="50%" cy="45%" r="65%">
+      <stop offset="0%" stop-color="#121d29"/><stop offset="100%" stop-color="#070a0f"/>
+    </radialGradient>
+    <linearGradient id="amber" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffe9a8"/><stop offset="100%" stop-color="#e0b34c"/>
+    </linearGradient>
+    <linearGradient id="laser" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffd9b8"/><stop offset="100%" stop-color="#f39058" stop-opacity=".1"/>
+    </linearGradient>
+  </defs>
+<rect width="128" height="128" rx="8" fill="url(#bgR)"/> <!-- 厂房 --> <path d="M18,104 V58 L34,66 V58 L50,66 V58 L66,66 V46 H110 V104 Z" fill="url(#hull)" stroke="#58a7bf" stroke-width="2.5" filter="url(#g1)"/> <!-- 塔吊(摆动) --> <g > <path d="M84,30 h30 M84,26 v8" stroke="#e0b34c" stroke-width="2.4" fill="none" filter="url(#g1)"/> <path d="M114,30 v14 M110,44 h8" stroke="#e0b34c" stroke-width="2" fill="none"/> </g> <!-- 双齿轮啮合 --> <g stroke="#58a7bf" fill="#15222f" filter="url(#g1)"> <circle cx="46" cy="82" r="13" stroke-width="2.4"/> <circle cx="46" cy="82" r="5" fill="#0a0f14" stroke-width="1.6"/> <circle cx="66" cy="94" r="9" stroke-width="2"/> <circle cx="66" cy="94" r="3.4" fill="#0a0f14" stroke-width="1.4"/> </g> <g stroke="#58a7bf" stroke-width="2"> <path d="M46,66 v-4 M46,98 v4 M30,82 h-4 M62,82 h4 M35,71 l-3,-3 M57,71 l3,-3 M35,93 l-3,3 M57,93 l3,3"/> <path d="M66,82 v-3 M66,106 v3 M74,94 h3 M55,94 h3"/> </g> <!-- 焊花 --> <g filter="url(#g2)"> <path d="M88,96 l4,-6 M92,98 l6,-2 M90,100 l5,4" stroke="#ffe9a8" stroke-width="1.6"/> <circle cx="90" cy="97" r="2.6" fill="url(#amber)"/> </g> <!-- 产线窗 --> <g fill="#58a7bf" opacity=".8"> <rect x="72" y="76" width="8" height="5" /><rect x="84" y="76" width="8" height="5"/> <rect x="96" y="76" width="8" height="5" /> <rect x="72" y="60" width="8" height="5"/><rect x="84" y="60" width="8" height="5" /> </g>
+</svg>

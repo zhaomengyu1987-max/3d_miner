@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+<defs>
+    <filter id="g1" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="2" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="g2" x="-90%" y="-90%" width="280%" height="280%">
+      <feGaussianBlur stdDeviation="4.5" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <linearGradient id="hull" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#26374a"/><stop offset="100%" stop-color="#0c141d"/>
+    </linearGradient>
+    <radialGradient id="engG">
+      <stop offset="0%" stop-color="#d8f6ff"/><stop offset="45%" stop-color="#58a7bf" stop-opacity=".85"/>
+      <stop offset="100%" stop-color="#58a7bf" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="bgR" cx="50%" cy="45%" r="65%">
+      <stop offset="0%" stop-color="#121d29"/><stop offset="100%" stop-color="#070a0f"/>
+    </radialGradient>
+    <linearGradient id="amber" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffe9a8"/><stop offset="100%" stop-color="#e0b34c"/>
+    </linearGradient>
+    <linearGradient id="laser" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffd9b8"/><stop offset="100%" stop-color="#f39058" stop-opacity=".1"/>
+    </linearGradient>
+  </defs>
+<rect width="128" height="128" rx="8" fill="url(#bgR)"/> <!-- 拱形机库 --> <path d="M22,104 V64 A42,42 0 0 1 106,64 V104" fill="url(#hull)" stroke="#58a7bf" stroke-width="2.5" filter="url(#g1)"/> <path d="M28,104 V66 A36,36 0 0 1 100,66 V104" fill="none" stroke="#305665" stroke-width="1.4"/> <!-- 桁架线 --> <path d="M22,64 L64,40 L106,64 M40,54 V104 M64,46 V104 M88,54 V104" stroke="#2e4258" stroke-width="1"/> <!-- 库门(开缝光) --> <rect x="42" y="78" width="44" height="26" fill="#060a0e" stroke="#58a7bf" stroke-width="1.6"/> <path d="M62,78 v26" stroke="#58a7bf" stroke-width="1.2" opacity=".7"/> <path d="M46,82 h12 M70,82 h12 M46,92 h12 M70,92 h12" stroke="#3d5a70" stroke-width="1.2"/> <!-- 门缝里的小货舰 --> <path d="M52,109 L64,104 L76,109 L74,114 L54,114 Z" fill="#15222f" stroke="#58a7bf" stroke-width="1.4"/> <g ><circle cx="50" cy="111" r="4" fill="url(#engG)"/></g> <!-- 顶部警示灯 --> <circle cx="64" cy="36" r="3" fill="#e0b34c" filter="url(#g1)"/> <!-- 泊位臂 --> <path d="M14,84 h8 M106,84 h8 M14,84 l-4,-6 M106,84 l4,-6" stroke="#305665" stroke-width="2.4" fill="none"/> <!-- 集装箱堆 --> <g stroke="#3d5a70" stroke-width="1.2" fill="#101a24"> <rect x="14" y="104" width="14" height="9"/><rect x="100" y="104" width="14" height="9"/> </g>
+</svg>

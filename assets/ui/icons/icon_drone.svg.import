@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://po5j2er8xubq"
-path="res://.godot/imported/icon_hive.png-81cc2ba129bd33715b9a5ec541721985.ctex"
+uid="uid://sowbhvxy4iw5"
+path="res://.godot/imported/icon_drone.svg-815e865b3f1ad8abc1ea7b102e385c07.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/ui/icons/icon_hive.png"
-dest_files=["res://.godot/imported/icon_hive.png-81cc2ba129bd33715b9a5ec541721985.ctex"]
+source_file="res://assets/ui/icons/icon_drone.svg"
+dest_files=["res://.godot/imported/icon_drone.svg-815e865b3f1ad8abc1ea7b102e385c07.ctex"]
 
 [params]
 
@@ -38,3 +38,6 @@ process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
 process/size_limit=0
 detect_3d/compress_to=1
+svg/scale=1.0
+editor/scale_with_editor_scale=false
+editor/convert_colors_with_editor_theme=false

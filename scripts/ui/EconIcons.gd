@@ -82,7 +82,7 @@ static func module_icon(module_id: String) -> Texture2D:
 static func png_icon(module_id: String) -> Texture2D:
 	if _png_cache.has(module_id) and _png_cache[module_id] != null:
 		return _png_cache[module_id]
-	var path := "res://assets/ui/icons/icon_%s.png" % module_id
+	var path := "res://assets/ui/icons/icon_%s.svg" % module_id
 	if not ResourceLoader.exists(path):
 		return null
 	var tex: Texture2D = load(path)

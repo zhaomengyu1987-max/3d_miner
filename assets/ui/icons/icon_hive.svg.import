@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://brspixg5785os"
-path="res://.godot/imported/icon_market.png-7c4c833dba3d5daf1d46103e5a643c1b.ctex"
+uid="uid://cjx0x2os1b667"
+path="res://.godot/imported/icon_hive.svg-1086f8a61b31b0ea18f5262298039dcf.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/ui/icons/icon_market.png"
-dest_files=["res://.godot/imported/icon_market.png-7c4c833dba3d5daf1d46103e5a643c1b.ctex"]
+source_file="res://assets/ui/icons/icon_hive.svg"
+dest_files=["res://.godot/imported/icon_hive.svg-1086f8a61b31b0ea18f5262298039dcf.ctex"]
 
 [params]
 
@@ -38,3 +38,6 @@ process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
 process/size_limit=0
 detect_3d/compress_to=1
+svg/scale=1.0
+editor/scale_with_editor_scale=false
+editor/convert_colors_with_editor_theme=false

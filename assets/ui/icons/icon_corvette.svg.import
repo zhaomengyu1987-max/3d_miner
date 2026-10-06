@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://bo7aklmljkw82"
-path="res://.godot/imported/icon_drone.png-491e5da0a28fadc0038778dcf91ce21e.ctex"
+uid="uid://b3atovn5gk3wy"
+path="res://.godot/imported/icon_corvette.svg-c7c112cd33cba3d5bfc962ac010dd3c7.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/ui/icons/icon_drone.png"
-dest_files=["res://.godot/imported/icon_drone.png-491e5da0a28fadc0038778dcf91ce21e.ctex"]
+source_file="res://assets/ui/icons/icon_corvette.svg"
+dest_files=["res://.godot/imported/icon_corvette.svg-c7c112cd33cba3d5bfc962ac010dd3c7.ctex"]
 
 [params]
 
@@ -38,3 +38,6 @@ process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
 process/size_limit=0
 detect_3d/compress_to=1
+svg/scale=1.0
+editor/scale_with_editor_scale=false
+editor/convert_colors_with_editor_theme=false
