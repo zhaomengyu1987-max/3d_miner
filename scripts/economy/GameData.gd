@@ -226,23 +226,66 @@ const WORLD_FACTIONS := {
 ## 这里的 "bloc" 只是【初始值】：运行时实际归属存在 WorldState._minor_bloc，
 ## 会被倒戈事件改写并持久化（见 world_state_save.json 的 minor_bloc 字段）。
 ## 初始 5:5 对半分配（2026-10-02 拍板），20 托拉斯本轮不动（M5 范围，仍保持中立/不接入）。
+## "home_sector"（M3 新增）：小国挂靠在哪个 sector 下——这是【静态】位置，不随倒戈变化
+## （倒戈只改 bloc 归属，不搬家，呼应"小国不会因为站队换边就挪地方"的常识）。
 const MINOR_FACTIONS := {
-	"minor1": {"name": "国1", "bloc": "empire"},
-	"minor2": {"name": "国2", "bloc": "empire"},
-	"minor3": {"name": "国3", "bloc": "empire"},
-	"minor4": {"name": "国4", "bloc": "empire"},
-	"minor5": {"name": "国5", "bloc": "empire"},
-	"minor6": {"name": "国6", "bloc": "southern"},
-	"minor7": {"name": "国7", "bloc": "southern"},
-	"minor8": {"name": "国8", "bloc": "southern"},
-	"minor9": {"name": "国9", "bloc": "southern"},
-	"minor10": {"name": "国10", "bloc": "southern"},
+	"minor1": {"name": "国1", "bloc": "empire", "home_sector": "buffer_west"},
+	"minor2": {"name": "国2", "bloc": "empire", "home_sector": "buffer_west"},
+	"minor3": {"name": "国3", "bloc": "empire", "home_sector": "empire_front"},
+	"minor4": {"name": "国4", "bloc": "empire", "home_sector": "buffer_center"},
+	"minor5": {"name": "国5", "bloc": "empire", "home_sector": "empire_front"},
+	"minor6": {"name": "国6", "bloc": "southern", "home_sector": "buffer_east"},
+	"minor7": {"name": "国7", "bloc": "southern", "home_sector": "buffer_east"},
+	"minor8": {"name": "国8", "bloc": "southern", "home_sector": "southern_front"},
+	"minor9": {"name": "国9", "bloc": "southern", "home_sector": "buffer_center"},
+	"minor10": {"name": "国10", "bloc": "southern", "home_sector": "southern_front"},
 }
 
-## 补给效率占位（星图落地前用三档顶替真实跳数图；星图做好后只需换这张表的来源，
-## WorldState.supply_efficiency() 的调用方不用改）。
+## 补给效率占位（M3 前用三档顶替真实跳数图）——M3 已落地精简星图，这两个常量不再被
+## supply_efficiency() 读取，留着仅供参考/回滚，不要删（怕有遗漏的调用点）。
 const STATION_REGION := "border"   # core(核心) / border(边境) / frontier(开拓地)
 const STATION_EFFICIENCY := {"core": 1.0, "border": 0.6, "frontier": 0.3}
+
+# ================= 世界系统 M3：精简版星图（跳数图，非真实坐标/渲染） =================
+# 概念稿见 tools/art_preview/worldmap_concept_v2.html（帝国/南联钳形夹击，中间挤出
+# 小国/托拉斯混居缓冲带，玩家被海盗环包围在正中心）。M3 只落数据层：8 个"代表性 sector"
+# 的跳数图，供 WorldState.supply_efficiency() 的距离衰减公式使用；不做真实坐标/UI 渲染
+# （那是以后排期的事，这里只论"跳了几步"）。
+
+## 玩家站点固定挂在这个 sector（多站点扩张是 M4 范围，这里先是单一常量）。
+const SECTOR_PLAYER := "buffer_center"
+
+## 8 个代表性 sector；name 仅供展示/日志用。
+const SECTORS := {
+	"empire_core":    {"name": "帝国核心"},
+	"empire_front":   {"name": "帝国前线"},
+	"buffer_west":    {"name": "缓冲带·西"},
+	"buffer_center":  {"name": "缓冲带·中心（玩家站点）"},
+	"buffer_east":    {"name": "缓冲带·东"},
+	"southern_front": {"name": "南联前线"},
+	"southern_core":  {"name": "南联核心"},
+	"pirate_zone":    {"name": "海盗开拓地"},
+}
+
+## 邻接表（无向图，边权恒为 1，只论跳数不算真实距离）——一条链：
+## 帝国核心 - 帝国前线 - 缓冲西 - 缓冲中心(玩家) - 缓冲东 - 南联前线 - 南联核心
+## 海盗开拓地单独挂在缓冲中心外（"环绕玩家站点"）。
+const SECTOR_EDGES := {
+	"empire_core":    ["empire_front"],
+	"empire_front":   ["empire_core", "buffer_west"],
+	"buffer_west":    ["empire_front", "buffer_center"],
+	"buffer_center":  ["buffer_west", "buffer_east", "pirate_zone"],
+	"buffer_east":    ["buffer_center", "southern_front"],
+	"southern_front": ["buffer_east", "southern_core"],
+	"southern_core":  ["southern_front"],
+	"pirate_zone":    ["buffer_center"],
+}
+
+## 两大国"核心"所在 sector（供跳数衰减公式用：从玩家站点跳几步能到对面核心）。
+const FACTION_CORE_SECTOR := {
+	"empire": "empire_core",
+	"southern": "southern_core",
+}
 
 ## 局部冲突节奏（2026-10-02 拍板：1 个月筹备 + 10 天开战 + 2 个月和平，循环往复）。
 ## 天数单位 = Economy.day（1 day = ECON.day_length 秒）；debug_instant 不改这里的天数，
@@ -268,6 +311,11 @@ const WORLD := {
 	"minor_ally_mult_per_nation": 0.03, # 每多/少一个盟友（相对 5:5 基线）对补给效率/发牌员需求规模的影响
 	"minor_ally_mult_min": 0.7,         # 上面系数的安全夹限（当前 ±5 国 × 0.03 = ±15%，正常碰不到这个边界）
 	"minor_ally_mult_max": 1.3,
+	# ---- M3：精简星图跳数衰减 + 小国局部摩擦（多战线雏形，2026-10-06 拍板）----
+	"supply_decay_per_hop": 0.15,       # 补给效率 = 1/(1+跳数×这个系数)；3跳(玩家→任一核心)≈0.69，
+	                                     # 跟 M2 前 STATION_EFFICIENCY["border"]=0.6 的量级接近，平滑过渡
+	"minor_friction_chance": 0.15,      # [占位] 每次进入筹备期，同 sector 混居的小国有概率擦出局部
+	                                     # 摩擦（纯叙事，暂不影响数值，多战线先从"能看见"做起）
 }
 
 

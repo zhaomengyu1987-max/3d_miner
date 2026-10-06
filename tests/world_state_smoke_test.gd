@@ -28,6 +28,8 @@ func _ready() -> void:
 	_test_frequency_mult()
 	_test_war_transition_and_burn()
 	_test_minor_defection()
+	_test_sector_graph()
+	_test_minor_friction()
 	_cleanup()
 	if _fails.is_empty():
 		print("WORLDSTATE_TEST_PASS")
@@ -183,6 +185,47 @@ func _test_minor_defection() -> void:
 		WorldState._minor_bloc[fid] = "southern"
 	var eff_isolated := WorldState.supply_efficiency("empire")
 	_check(eff_all_in > eff_isolated, "盟友多时补给效率(%.4f) > 盟友全失时(%.4f)" % [eff_all_in, eff_isolated])
+	WorldState.debug_reset()
+
+
+func _test_sector_graph() -> void:
+	print("[sector graph (M3)]")
+	_check(WorldState.sector_hops("buffer_center", "buffer_center") == 0, "同sector跳数=0")
+	_check(WorldState.sector_hops("buffer_center", "empire_core") == 3,
+		"玩家→帝国核心=3跳(实际%d)" % WorldState.sector_hops("buffer_center", "empire_core"))
+	_check(WorldState.sector_hops("buffer_center", "southern_core") == 3,
+		"玩家→南联核心=3跳(实际%d)" % WorldState.sector_hops("buffer_center", "southern_core"))
+	_check(WorldState.sector_hops("buffer_center", "pirate_zone") == 1, "玩家→海盗开拓地=1跳(环绕站点)")
+	_check(WorldState.sector_hops("empire_core", "southern_core") == 6,
+		"帝国核心→南联核心=6跳(满链长度, 实际%d)" % WorldState.sector_hops("empire_core", "southern_core"))
+	# 对称性：玩家正好卡在两大国正中间，5:5基线下两边补给效率应该相等
+	WorldState.debug_reset()
+	var eff_empire := WorldState.supply_efficiency("empire")
+	var eff_southern := WorldState.supply_efficiency("southern")
+	_check(absf(eff_empire - eff_southern) < 0.0001,
+		"5:5基线+对称跳数下，两大国补给效率相等(%.4f vs %.4f)" % [eff_empire, eff_southern])
+	var expected: float = 1.0 / (1.0 + 3.0 * float(GameData.WORLD["supply_decay_per_hop"]))
+	_check(absf(eff_empire - expected) < 0.0001,
+		"3跳衰减公式数值核对(期望%.4f, 实际%.4f)" % [expected, eff_empire])
+
+
+func _test_minor_friction() -> void:
+	print("[minor friction (M3)]")
+	WorldState.debug_reset()
+	# buffer_center 下默认挂靠 国4(empire)/国9(southern)——天然就是一对可摩擦的混居小国
+	var fids_in_center: Array = []
+	for fid in GameData.MINOR_FACTIONS:
+		if String(GameData.MINOR_FACTIONS[fid]["home_sector"]) == "buffer_center":
+			fids_in_center.append(fid)
+	_check(fids_in_center.size() == 2, "buffer_center 默认挂靠2个小国(国4/国9)")
+	var blocs: Array = []
+	for fid in fids_in_center:
+		blocs.append(String(WorldState._minor_bloc.get(fid, "")))
+	_check(blocs.size() == 2 and blocs[0] != blocs[1], "buffer_center 的2个小国初始归属不同，天然可摩擦")
+	# 多轮调用确保函数本身不报错（纯叙事，不断言具体事件文本，只验证不崩）
+	for i in 30:
+		WorldState._roll_minor_friction()
+	_check(true, "连续调用30次_roll_minor_friction()无崩溃")
 	WorldState.debug_reset()
 
 
