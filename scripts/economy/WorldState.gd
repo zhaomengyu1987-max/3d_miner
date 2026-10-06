@@ -94,6 +94,7 @@ func _enter_phase(new_phase: int) -> void:
 			current_faction = "empire" if cycle_index % 2 == 0 else "southern"
 			stockpile = 0.0
 			_roll_minor_defections()
+			_roll_minor_friction()
 			Economy.post_event("边境传来军情：%s 开始大规模军备调度，物流需求预计持续走高" % \
 				String(GameData.WORLD_FACTIONS[current_faction]["name"]), "warn")
 		Phase.WAR:
@@ -177,14 +178,43 @@ func freighter_frequency_mult() -> float:
 	return float(GameData.WORLD["freighter_mult_peace"])
 
 
-# ================= 补给效率占位（星图落地前用三档顶替，调用方接口不变） =================
+# ================= 补给效率（M3：精简星图跳数衰减 × M2：盟友系数） =================
 
-## M2：补给效率 = 区域占位基值 × 盟友系数。盟友系数由 10 小国当前阵营归属算出
-## （相对 5:5 基线每多/少一个盟友 ±minor_ally_mult_per_nation），呼应路线图里
-## "货舰扫货积极性 M2+ 可直接接入" 的拍板——阵营归属一边倒，补给效率跟着一起动。
+## M3：补给效率 = 距离衰减基值 × 盟友系数。距离衰减基值按"玩家站点到当面主战方核心
+## sector 的跳数"算（1/(1+跳数×supply_decay_per_hop)），替换了 M2 前的 STATION_REGION
+## 三档占位常量——接口签名没变，调用方（_on_military_sale/_demand_scale）不用改。
+## 盟友系数沿用 M2：由 10 小国当前阵营归属算出（相对 5:5 基线每多/少一个盟友
+## ±minor_ally_mult_per_nation），阵营归属一边倒，补给效率跟着一起动。
 func supply_efficiency(faction_id: String) -> float:
-	var base := float(GameData.STATION_EFFICIENCY.get(GameData.STATION_REGION, 0.5))
+	var core_sector := String(GameData.FACTION_CORE_SECTOR.get(faction_id, GameData.SECTOR_PLAYER))
+	var hops := sector_hops(GameData.SECTOR_PLAYER, core_sector)
+	var decay: float = float(GameData.WORLD["supply_decay_per_hop"])
+	var base := 1.0 / (1.0 + float(hops) * decay)
 	return base * _ally_mult(faction_id)
+
+
+## 两个 sector 之间的最短跳数（BFS，图很小，每次现算不缓存也无妨）。
+## 查不到/不连通时返回 99 兜底（当前图是连通的，正常不会触发）。
+func sector_hops(from_id: String, to_id: String) -> int:
+	if from_id == to_id:
+		return 0
+	var visited := {from_id: true}
+	var queue: Array = [[from_id, 0]]
+	var qi := 0
+	while qi < queue.size():
+		var cur: Array = queue[qi]
+		qi += 1
+		var node: String = cur[0]
+		var dist: int = cur[1]
+		for neighbor in GameData.SECTOR_EDGES.get(node, []):
+			var nid := String(neighbor)
+			if visited.has(nid):
+				continue
+			if nid == to_id:
+				return dist + 1
+			visited[nid] = true
+			queue.append([nid, dist + 1])
+	return 99
 
 
 ## 10 小国里当前归属 bloc 的数量（0~10）。
@@ -224,6 +254,44 @@ func _roll_minor_defections() -> void:
 			String(GameData.MINOR_FACTIONS[fid]["name"]),
 			String(GameData.WORLD_FACTIONS[cur_bloc]["name"]),
 			String(GameData.WORLD_FACTIONS[new_bloc]["name"])], "warn")
+
+
+## M3：多战线雏形——10 小国之间的局部摩擦。按 home_sector 分组，如果同一 sector 里
+## 混居着归属不同 bloc 的小国，有概率擦出一次摩擦事件。目前【纯叙事】，不改任何数值
+## （2026-10-06 拍板：先让玩家"看得见"多战线的影子，手感出来后再决定要不要挂效率）。
+func _roll_minor_friction() -> void:
+	var chance: float = float(GameData.WORLD["minor_friction_chance"])
+	var by_sector: Dictionary = {}
+	for fid in GameData.MINOR_FACTIONS:
+		var sector := String(GameData.MINOR_FACTIONS[fid]["home_sector"])
+		if not by_sector.has(sector):
+			by_sector[sector] = []
+		by_sector[sector].append(fid)
+	for sector in by_sector:
+		var fids: Array = (by_sector[sector] as Array).duplicate()
+		if fids.size() < 2:
+			continue
+		if rng.randf() >= chance:
+			continue
+		fids.shuffle()
+		var a := ""
+		var b := ""
+		for i in fids.size():
+			for j in range(i + 1, fids.size()):
+				var bloc_a := String(_minor_bloc.get(fids[i], ""))
+				var bloc_b := String(_minor_bloc.get(fids[j], ""))
+				if bloc_a != "" and bloc_a != bloc_b:
+					a = fids[i]
+					b = fids[j]
+					break
+			if a != "":
+				break
+		if a == "" or b == "":
+			continue  # 这个 sector 里凑巧归属一致，没有摩擦对象
+		Economy.post_event("局部摩擦：%s 与 %s 在【%s】发生边境冲突——双方互指对方挑衅（暂不影响补给）" % [
+			String(GameData.MINOR_FACTIONS[a]["name"]),
+			String(GameData.MINOR_FACTIONS[b]["name"]),
+			String(GameData.SECTORS[sector]["name"])], "warn")
 
 
 # ================= 玩家反哺：Economy 广播的军需品实际成交 =================
