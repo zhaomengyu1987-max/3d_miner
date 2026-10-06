@@ -150,11 +150,16 @@ func _equip_row(equip: String) -> Control:
 	name_l.custom_minimum_size.x = 240
 	head.add_child(name_l)
 
-	# 许可证状态
-	if not GameData.is_component(equip):
+	# 许可证状态(MVP: is_equip 装备免许可证, 不显示许可证栏)
+	var is_equip_item: bool = GameData.PRODUCTS.has(equip) and GameData.PRODUCTS[equip].get("is_equip", false)
+	if not GameData.is_component(equip) and not is_equip_item:
 		var lic := EconTheme.label(_license_text(equip), _license_color(equip), 12)
 		lic.custom_minimum_size.x = 190
 		head.add_child(lic)
+	elif is_equip_item:
+		var free := EconTheme.label("免许可证", EconTheme.GOOD, 12)
+		free.custom_minimum_size.x = 190
+		head.add_child(free)
 
 	var t := EconTheme.label("%s/批" % EconTheme.fmt_time(Economy.effective_time(equip)), EconTheme.DIM, 12)
 	head.add_child(t)
