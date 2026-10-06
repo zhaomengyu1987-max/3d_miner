@@ -780,8 +780,10 @@ func start_production(equip: String, batches: int) -> String:
 		cost[id] = int(need[id]) * batches
 	pay(cost)
 	# 许可证只管产品/舰船：组件不消耗许可证、也不涨逆向（2026-09-30 修 bug）
+	# MVP: MissionOps 装备(is_equip)免许可证——基础装备直接造(船长令 2026-10-05)
 	# 排队制下许可证在下单时锁定扣除、取消时退还（完工只涨逆向）
-	var uses_license := not blueprints.has(equip) and not GameData.is_component(equip)
+	var is_mission_equip2: bool = GameData.PRODUCTS.has(equip) and GameData.PRODUCTS[equip].get("is_equip", false)
+	var uses_license := not is_mission_equip2 and not blueprints.has(equip) and not GameData.is_component(equip)
 	if uses_license:
 		licenses[equip] = int(licenses.get(equip, 0)) - batches
 		if int(licenses[equip]) <= 0:
