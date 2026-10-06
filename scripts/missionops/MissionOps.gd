@@ -33,6 +33,11 @@ var _team_seq: int = 0
 var _mis_seq: int = 0
 var _last_report: Dictionary = {}
 var _ui: Node = null
+# ── MVP 试玩档 ──
+var trial_mode: bool = false           # 加速模式(时长÷SPEED_DIV)
+var trial_initialized: bool = false     # 初始资源只发一次
+const TRIAL_SPEED_DIV := 10.0           # 试玩: 任务时长÷10
+const T1UP_DUR_MOD := 0.85              # T1+升级: 任务时长×0.85(-15%)
 # ── M2 新增 ──
 var fleet: Dictionary = {}           # ship_uid -> {def_id, name, fitted: {power/elec/weapon/defense}}
 var ship_name_counter: int = 0       # 自动编号 001号/002号…
@@ -52,8 +57,9 @@ func _ready() -> void:
 	# 启动补算延迟到本帧末: 确保所有节注册/回放完成后再结算,
 	# 且 _refresh_pool 的 seed 取到最终墙钟值(避免注册顺序竞争)。
 	call_deferred("_startup_catch_up")
-	# M1 临时入口: F6 开关任务板(M2 挂 EconUiRoot 面板链)
-	_ui = load("res://scripts/ui/MissionBoardUi.gd").new()
+	# MVP: 行动中心(F6/巢穴点击同一入口)
+	_ui = load("res://scripts/ui/ActionCenterUi.gd").new()
+	_ui.name = "ActionCenterUi"
 	add_child(_ui)
 	# M2: 战报弹窗(F7 查看 / 结算自动弹出)
 	var kr: Node = load("res://scripts/ui/KillReportUi.gd").new()
@@ -77,6 +83,7 @@ func _get_state() -> Dictionary:
 		"fleet": fleet, "ship_name_counter": ship_name_counter,
 		"inventory": inventory, "board": board,
 		"discoveries": discoveries,
+		"trial_initialized": trial_initialized, "trial_mode": trial_mode,
 	}
 
 
@@ -183,6 +190,8 @@ func _apply_state(data: Variant) -> bool:
 	for tid in teams:
 		if not (teams[tid] as Dictionary).has("ship_uids"):
 			teams[tid]["ship_uids"] = []
+	trial_initialized = bool(data.get("trial_initialized", false))
+	trial_mode = bool(data.get("trial_mode", false))
 	return true
 
 
@@ -419,6 +428,19 @@ func remove_ship_from_team(tid: String, ship_uid: String) -> Dictionary:
 	return {"ok": true}
 
 
+## MVP: 编队T1+装备时长修正(任一船装有_up装备→×0.85)
+func _team_t1up_dur_mod(team_id: String) -> float:
+	if not teams.has(team_id):
+		return 1.0
+	for uid in teams[team_id].get("ship_uids", []):
+		if fleet.has(uid):
+			for slot in fleet[uid].get("fitted", {}):
+				var eq_id: String = fleet[uid]["fitted"][slot]
+				if eq_id != "" and eq_id.ends_with("_up"):
+					return T1UP_DUR_MOD
+	return 1.0
+
+
 # ── 派遣 ──
 func dispatch(team_id: String, task_id: String, seed_override: int = -1) -> Dictionary:
 	if not MissionDefs.TASKS.has(task_id):
@@ -451,6 +473,11 @@ func dispatch(team_id: String, task_id: String, seed_override: int = -1) -> Dict
 	var seed_v := seed_override if seed_override >= 0 else int(_now() * 1000.0) ^ (_mis_seq * 7919)
 	var now := _now()
 	var dur := float(def["dur_sec"])
+	# MVP: 试玩加速
+	if trial_mode:
+		dur /= TRIAL_SPEED_DIV
+	# MVP: T1+ 升级效果(时长×0.85, 每件生效不叠加取最优)
+	dur *= _team_t1up_dur_mod(team_id)
 	active[mid] = {"task_id": task_id, "team_id": team_id, "cid": cid,
 		"seed": seed_v, "started_wall": now, "ends_wall": now + dur, "dur": dur}
 	captains[cid]["status"] = "on_mission"
@@ -635,6 +662,31 @@ func reset_state() -> void:
 	discoveries = []
 	_refresh_pool()
 	_refresh_rotation()
+
+
+## MVP: 试玩档初始化(只发一次初始资源)
+func trial_setup() -> void:
+	if trial_initialized:
+		return
+	trial_initialized = true
+	trial_mode = true
+	# 初始资金
+	Economy.money = 50000.0
+	# 初始舰船×2
+	Economy.inv["longbow"] = int(Economy.inv.get("longbow", 0)) + 2
+	# 初始装备×4(每种1件)
+	for eq_id in MissionDefs.EQUIPMENT:
+		inventory[eq_id] = int(inventory.get(eq_id, 0)) + 2
+	# 初始材料(供T1+升级测试)
+	inventory["exp_weapon"] = 5
+	inventory["exp_elec"] = 5
+	inventory["exp_power"] = 5
+	inventory["exp_defense"] = 5
+	# 模拟巢穴Lv2
+	if Economy.modules.has("hive"):
+		Economy.modules["hive"]["level"] = 2
+		Economy.modules["hive"]["built"] = true
+	print("[MissionOps] 试玩档初始化完成: ₡50000 + 舰船×2 + 装备×8 + 材料×20")
 
 
 # ═══════════════════════════════════════════════════
