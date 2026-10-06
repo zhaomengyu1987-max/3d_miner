@@ -90,8 +90,19 @@ func _rebuild() -> void:
 	left.add_child(_section("空间站组件（矿石直接制造）"))
 	for id in GameData.COMPONENTS:
 		left.add_child(_equip_row(id))
-	left.add_child(_section("小型产品（许可证/原图）"))
+	# MVP: 子系统装备独立分区(直接制造,无许可证无蓝图)
+	var equip_ids: Array[String] = []
+	var product_ids: Array[String] = []
 	for id in GameData.PRODUCTS:
+		if GameData.PRODUCTS[id].get("is_equip", false):
+			equip_ids.append(id)
+		else:
+			product_ids.append(id)
+	left.add_child(_section("子系统装备（探索派遣用·直接制造）"))
+	for id in equip_ids:
+		left.add_child(_equip_row(id))
+	left.add_child(_section("小型产品（许可证/原图）"))
+	for id in product_ids:
 		left.add_child(_equip_row(id))
 	left.add_child(_section("舰船（纯商品：卖给来访货舰——玩家不操舰）"))
 	for id in GameData.SHIPS:
@@ -150,16 +161,12 @@ func _equip_row(equip: String) -> Control:
 	name_l.custom_minimum_size.x = 240
 	head.add_child(name_l)
 
-	# 许可证状态(MVP: is_equip 装备免许可证, 不显示许可证栏)
+	# 许可证状态(仅原有产品显示; is_equip 装备完全无此栏)
 	var is_equip_item: bool = GameData.PRODUCTS.has(equip) and GameData.PRODUCTS[equip].get("is_equip", false)
 	if not GameData.is_component(equip) and not is_equip_item:
 		var lic := EconTheme.label(_license_text(equip), _license_color(equip), 12)
 		lic.custom_minimum_size.x = 190
 		head.add_child(lic)
-	elif is_equip_item:
-		var free := EconTheme.label("免许可证", EconTheme.GOOD, 12)
-		free.custom_minimum_size.x = 190
-		head.add_child(free)
 
 	var t := EconTheme.label("%s/批" % EconTheme.fmt_time(Economy.effective_time(equip)), EconTheme.DIM, 12)
 	head.add_child(t)
