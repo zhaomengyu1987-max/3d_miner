@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+<defs>
+    <filter id="g1" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="2" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="g2" x="-90%" y="-90%" width="280%" height="280%">
+      <feGaussianBlur stdDeviation="4" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <linearGradient id="hull" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#26374a"/><stop offset="100%" stop-color="#0c141d"/>
+    </linearGradient>
+    <radialGradient id="engG">
+      <stop offset="0%" stop-color="#d8f6ff"/><stop offset="45%" stop-color="#58a7bf" stop-opacity=".85"/>
+      <stop offset="100%" stop-color="#58a7bf" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="bgR" cx="50%" cy="45%" r="65%">
+      <stop offset="0%" stop-color="#121d29"/><stop offset="100%" stop-color="#070a0f"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="128" height="128" rx="8" fill="url(#bgR)"/>
+  
+  <g stroke="#58a7bf" fill="url(#hull)" stroke-width="2" filter="url(#g1)">
+    <rect x="20" y="20" width="88" height="10" rx="2"/>
+    <rect x="20" y="58" width="88" height="10" rx="2"/>
+    <rect x="20" y="96" width="88" height="10" rx="2"/>
+    <line x1="24" y1="30" x2="24" y2="58"/>
+    <line x1="64" y1="30" x2="64" y2="58"/>
+    <line x1="104" y1="30" x2="104" y2="58"/>
+    <line x1="24" y1="68" x2="24" y2="96"/>
+    <line x1="64" y1="68" x2="64" y2="96"/>
+    <line x1="104" y1="68" x2="104" y2="96"/>
+  </g>
+  
+  <g stroke-width="1.5">
+    <rect x="30" y="38" width="16" height="16" fill="#1a3a28" stroke="#73e68d"/>
+    <rect x="56" y="38" width="16" height="16" fill="#3a2a1a" stroke="#e0b34c"/>
+    <rect x="82" y="38" width="16" height="16" fill="#1a2838" stroke="#4cc8e0"/>
+    <rect x="30" y="76" width="16" height="16" fill="#381a1a" stroke="#f39058"/>
+    <rect x="56" y="76" width="16" height="16" fill="#1a1a38" stroke="#cc99ff"/>
+    <rect x="82" y="76" width="16" height="16" fill="#1a3a28" stroke="#73e68d"/>
+  </g>
+  
+  <circle cx="64" cy="12" r="3" fill="#e0b34c" filter="url(#g2)"/>
+
+</svg>

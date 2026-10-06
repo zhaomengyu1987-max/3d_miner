@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+<defs>
+    <filter id="g1" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="2" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="g2" x="-90%" y="-90%" width="280%" height="280%">
+      <feGaussianBlur stdDeviation="4" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <linearGradient id="hull" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#26374a"/><stop offset="100%" stop-color="#0c141d"/>
+    </linearGradient>
+    <radialGradient id="engG">
+      <stop offset="0%" stop-color="#d8f6ff"/><stop offset="45%" stop-color="#58a7bf" stop-opacity=".85"/>
+      <stop offset="100%" stop-color="#58a7bf" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="bgR" cx="50%" cy="45%" r="65%">
+      <stop offset="0%" stop-color="#121d29"/><stop offset="100%" stop-color="#070a0f"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="128" height="128" rx="8" fill="url(#bgR)"/>
+  
+  <g stroke="#58a7bf" fill="url(#hull)" stroke-width="2" filter="url(#g1)">
+    <rect x="28" y="16" width="72" height="96" rx="6"/>
+  </g>
+  <line x1="28" y1="34" x2="100" y2="34" stroke="#305665" stroke-width="2"/>
+  
+  <g fill="#3d5a70">
+    <rect x="36" y="44" width="8" height="8" rx="1"/>
+    <rect x="36" y="62" width="8" height="8" rx="1"/>
+    <rect x="36" y="80" width="8" height="8" rx="1"/>
+  </g>
+  <line x1="52" y1="48" x2="92" y2="48" stroke="#58a7bf" stroke-width="2"/>
+  <line x1="52" y1="66" x2="84" y2="66" stroke="#58a7bf" stroke-width="2"/>
+  <line x1="52" y1="84" x2="88" y2="84" stroke="#58a7bf" stroke-width="2"/>
+  
+  <circle cx="40" cy="48" r="3" fill="#73e68d"/>
+  <circle cx="40" cy="66" r="3" fill="#e0b34c"/>
+  <circle cx="40" cy="84" r="3" fill="#f39058"/>
+  
+  <rect x="52" y="10" width="24" height="10" rx="4" fill="url(#hull)" stroke="#58a7bf" stroke-width="2"/>
+
+</svg>

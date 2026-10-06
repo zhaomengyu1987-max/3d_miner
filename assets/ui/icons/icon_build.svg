@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+<defs>
+    <filter id="g1" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="2" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="g2" x="-90%" y="-90%" width="280%" height="280%">
+      <feGaussianBlur stdDeviation="4" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <linearGradient id="hull" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#26374a"/><stop offset="100%" stop-color="#0c141d"/>
+    </linearGradient>
+    <radialGradient id="engG">
+      <stop offset="0%" stop-color="#d8f6ff"/><stop offset="45%" stop-color="#58a7bf" stop-opacity=".85"/>
+      <stop offset="100%" stop-color="#58a7bf" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="bgR" cx="50%" cy="45%" r="65%">
+      <stop offset="0%" stop-color="#121d29"/><stop offset="100%" stop-color="#070a0f"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="128" height="128" rx="8" fill="url(#bgR)"/>
+  
+  <g stroke="#58a7bf" fill="url(#hull)" stroke-width="2.5" filter="url(#g1)"
+     transform="rotate(45 64 64)">
+    <rect x="56" y="30" width="16" height="50" rx="4"/>
+    <rect x="48" y="22" width="32" height="14" rx="7"/>
+    <rect x="48" y="76" width="32" height="14" rx="7"/>
+    <circle cx="64" cy="29" r="6" fill="#070a0f"/>
+    <circle cx="64" cy="83" r="6" fill="#070a0f"/>
+  </g>
+  
+  <g stroke="#ffe9a8" stroke-width="2" filter="url(#g2)">
+    <line x1="88" y1="36" x2="94" y2="28"/>
+    <line x1="92" y1="42" x2="100" y2="38"/>
+    <line x1="86" y1="30" x2="82" y2="22"/>
+  </g>
+  <circle cx="88" cy="38" r="3" fill="#ffe9a8" filter="url(#g2)"/>
+  
+  <line x1="30" y1="104" x2="98" y2="104" stroke="#305665" stroke-width="3"/>
+
+</svg>
