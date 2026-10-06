@@ -20,7 +20,7 @@ const SHIP_DEPART_BACK := 6.0   # 离港先径向后退距离(再转身走)
 const SHIP_LEN := {"small": 0.875, "standard": 1.0, "heavy": 1.125, "giant": 1.25}  # 各型号目标长度(米) [2026-10-05 再拍板: 全舰÷4]
 const HULL_COLOR := Color(0.58, 0.64, 0.74)  # 无材质低模的中性船壳色
 ## 站体点击判定半径(米): 覆盖 athanor 站体, 与避让半径同量级
-const STATION_CLICK_RADIUS := 6.0
+const STATION_CLICK_RADIUS := 3.5
 ## 空点兜底: 鼠标点击位置与站心屏幕投影距离小于该值也算点站(像素)
 # R8: STATION_CLICK_PIXELS 已删除(空点兜底导致点太空触发菜单)
 
