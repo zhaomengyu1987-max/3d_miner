@@ -61,6 +61,15 @@ const PRODUCTS := {
 		"bom": {"rareE": 15, "commonE": 40, "commonC": 20}, "time": 300.0, "price": 1900.0},
 	"plasmaAmmo": {"name": "模块化电浆弹药", "batch": 200,
 		"bom": {"commonC": 60, "rareD": 35, "commonB": 25}, "time": 360.0, "price": 3100.0},
+	# ---------- MissionOps 子系统装备(MVP: 建造厂可制造) ----------
+	"eq_power_mk1": {"name": "标准反应堆", "batch": 1,
+		"bom": {"rareD": 40, "fueltank": 1}, "time": 240.0, "price": 900.0, "is_equip": true},
+	"eq_elec_mk1": {"name": "基础传感阵列", "batch": 1,
+		"bom": {"rareB": 40, "ecu": 1}, "time": 240.0, "price": 1000.0, "is_equip": true},
+	"eq_weapon_mk1": {"name": "制式火控组", "batch": 1,
+		"bom": {"rareA": 40, "truss": 2}, "time": 240.0, "price": 1100.0, "is_equip": true},
+	"eq_defense_mk1": {"name": "复合装甲挂包", "batch": 1,
+		"bom": {"rareC": 40, "cabin": 1}, "time": 240.0, "price": 950.0, "is_equip": true},
 }
 
 # ---------- 舰船（§3.2，单艘生产，纯商品——玩家不操舰） ----------

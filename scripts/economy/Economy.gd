@@ -758,8 +758,10 @@ func production_block_reason(equip: String, batches: int) -> String:
 		if stock(id) < per:
 			return "材料不足：%s" % GameData.good_name(id)
 	# 许可证只管产品/舰船——组件（空间站结构）永远免许可证（2026-09-30 修 bug）
+	# MVP: MissionOps 装备(is_equip)免许可证(蓝图 §15.3 许可制造 M3 接)
 	# 产线满不再拦截：继续下单会进入排队（2026-09-30 拍板）
-	if not GameData.is_component(equip) and not blueprints.has(equip):
+	var is_mission_equip: bool = GameData.PRODUCTS.has(equip) and GameData.PRODUCTS[equip].get("is_equip", false)
+	if not is_mission_equip and not GameData.is_component(equip) and not blueprints.has(equip):
 		var uses := int(licenses.get(equip, 0))
 		if uses < batches:
 			return "许可证次数不足（去机库向货舰购买）"
@@ -858,6 +860,14 @@ func _advance_jobs(delta: float) -> void:
 func _finish_production(job: Dictionary) -> void:
 	var equip: String = job["equip"]
 	var batches: int = job["batches"]
+	# MVP: MissionOps 装备完工 → 入 MissionOps 库存(非 Economy.inv)
+	if GameData.PRODUCTS.has(equip) and GameData.PRODUCTS[equip].get("is_equip", false):
+		var mo := get_node_or_null("/root/MissionOps")
+		if mo:
+			mo.grant_equipment(equip, batches)
+			post_event("%s 制造完成 ×%d → 已入探索装备库" % [GameData.good_name(equip), batches], "good")
+			jobs_changed.emit()
+			return
 	if GameData.is_component(equip):
 		inv[equip] = int(inv.get(equip, 0)) + batches
 	elif GameData.is_product(equip):
