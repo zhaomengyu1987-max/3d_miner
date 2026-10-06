@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://iukgf62gqgot"
-path="res://.godot/imported/icon_corvette.png-f4f76079c37e40da1af305eec7c27f97.ctex"
+uid="uid://1vmr3xob6l41"
+path="res://.godot/imported/icon_market.svg-312474a81c8ef59e7ab59832c3b4c408.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/ui/icons/icon_corvette.png"
-dest_files=["res://.godot/imported/icon_corvette.png-f4f76079c37e40da1af305eec7c27f97.ctex"]
+source_file="res://assets/ui/icons/icon_market.svg"
+dest_files=["res://.godot/imported/icon_market.svg-312474a81c8ef59e7ab59832c3b4c408.ctex"]
 
 [params]
 
@@ -38,3 +38,6 @@ process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
 process/size_limit=0
 detect_3d/compress_to=1
+svg/scale=1.0
+editor/scale_with_editor_scale=false
+editor/convert_colors_with_editor_theme=false

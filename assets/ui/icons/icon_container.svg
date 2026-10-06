@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+<defs>
+    <filter id="g1" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="2" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="g2" x="-90%" y="-90%" width="280%" height="280%">
+      <feGaussianBlur stdDeviation="4.5" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <linearGradient id="hull" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#26374a"/><stop offset="100%" stop-color="#0c141d"/>
+    </linearGradient>
+    <radialGradient id="engG">
+      <stop offset="0%" stop-color="#d8f6ff"/><stop offset="45%" stop-color="#58a7bf" stop-opacity=".85"/>
+      <stop offset="100%" stop-color="#58a7bf" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="bgR" cx="50%" cy="45%" r="65%">
+      <stop offset="0%" stop-color="#121d29"/><stop offset="100%" stop-color="#070a0f"/>
+    </radialGradient>
+    <linearGradient id="amber" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffe9a8"/><stop offset="100%" stop-color="#e0b34c"/>
+    </linearGradient>
+    <linearGradient id="laser" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffd9b8"/><stop offset="100%" stop-color="#f39058" stop-opacity=".1"/>
+    </linearGradient>
+  </defs>
+<rect width="128" height="128" rx="8" fill="url(#bgR)"/> <!-- 吊钩与吊索 --> <path d="M64,14 v10" stroke="#e0b34c" stroke-width="2.4" filter="url(#g1)"/> <path d="M56,58 L64,24 L72,58" stroke="#305665" stroke-width="2" fill="none"/> <path d="M58,16 a6,6 0 1 1 12,0" fill="none" stroke="#e0b34c" stroke-width="2.4"/> <!-- 箱堆:上层(吊着的,微光) --> <g filter="url(#g1)"> <rect x="46" y="58" width="36" height="24" rx="2" fill="url(#hull)" stroke="#58a7bf" stroke-width="2.2"/> <path d="M52,58 v24 M76,58 v24 M46,66 h36 M46,74 h36" stroke="#2e4258" stroke-width="1.1"/> <rect x="58" y="63" width="12" height="7" fill="#0a0f14" stroke="#305665"/> <circle cx="64" cy="66.5" r="1.6" fill="#58a7bf" /> </g> <!-- 中层两箱 --> <g stroke="#58a7bf" stroke-width="2" fill="url(#hull)"> <rect x="24" y="86" width="36" height="24" rx="2"/> <rect x="64" y="86" width="36" height="24" rx="2"/> </g> <path d="M30,86 v24 M54,86 v24 M24,94 h36 M70,86 v24 M94,86 v24 M64,94 h36" stroke="#2e4258" stroke-width="1.1"/> <!-- 六角锁定扣 --> <g stroke="#e0b34c" stroke-width="1.6" fill="#101a24"> <path d="M62,110 l2,-3 h4 l2,3 v4 l-2,3 h-4 l-2,-3 Z" transform="translate(-20,0)"/> <path d="M62,110 l2,-3 h4 l2,3 v4 l-2,3 h-4 l-2,-3 Z" transform="translate(20,0)"/> </g> <!-- 侧面标签条 --> <path d="M24,102 h36 M64,102 h36" stroke="#3d5a70" stroke-width="2.4"/> <path d="M28,102 h10" stroke="#58a7bf" stroke-width="2.4" />
+</svg>

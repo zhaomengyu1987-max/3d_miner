@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+<defs>
+    <filter id="g1" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="2" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="g2" x="-90%" y="-90%" width="280%" height="280%">
+      <feGaussianBlur stdDeviation="4.5" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <linearGradient id="hull" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#26374a"/><stop offset="100%" stop-color="#0c141d"/>
+    </linearGradient>
+    <radialGradient id="engG">
+      <stop offset="0%" stop-color="#d8f6ff"/><stop offset="45%" stop-color="#58a7bf" stop-opacity=".85"/>
+      <stop offset="100%" stop-color="#58a7bf" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="bgR" cx="50%" cy="45%" r="65%">
+      <stop offset="0%" stop-color="#121d29"/><stop offset="100%" stop-color="#070a0f"/>
+    </radialGradient>
+    <linearGradient id="amber" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffe9a8"/><stop offset="100%" stop-color="#e0b34c"/>
+    </linearGradient>
+    <linearGradient id="laser" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffd9b8"/><stop offset="100%" stop-color="#f39058" stop-opacity=".1"/>
+    </linearGradient>
+  </defs>
+<rect width="128" height="128" rx="8" fill="url(#bgR)"/> <!-- 环绕轨道(虚线) --> <ellipse cx="64" cy="76" rx="46" ry="16" fill="none" stroke="#305665" stroke-width="1.6" stroke-dasharray="5 4"/> <circle cx="20" cy="72" r="2.4" fill="#58a7bf" /> <!-- 护卫舰(侧视,朝左) --> <path d="M30,50 L44,42 L92,42 L106,47 L106,57 L92,62 L44,62 L30,56 Z" fill="url(#hull)" stroke="#58a7bf" stroke-width="2.4" filter="url(#g1)"/> <path d="M62,42 L68,32 L74,42" fill="#101a24" stroke="#58a7bf" stroke-width="1.6"/> <path d="M36,50 h12 M36,54 h12" stroke="#58a7bf" stroke-width="1.6"/> <circle cx="98" cy="50" r="3" fill="#58a7bf" /> <g ><circle cx="112" cy="49" r="5" fill="url(#engG)"/><circle cx="112" cy="49" r="1.4" fill="#d8f6ff"/></g> <g ><circle cx="112" cy="56" r="5" fill="url(#engG)"/><circle cx="112" cy="56" r="1.4" fill="#d8f6ff"/></g> <!-- 激光束(向下打矿) --> <path d="M52,62 L48,88 L60,88 L56,62 Z" fill="url(#laser)"/> <path d="M52,62 V90" stroke="#ffe9a8" stroke-width="1.8" filter="url(#g2)"/> <!-- M 档小行星(轨道中心) --> <path d="M56,90 l8,-6 10,4 2,8 -8,6 -10,-3 Z" fill="#15222f" stroke="#e0b34c" stroke-width="1.8"/> <path d="M62,94 l4,-3 5,2" stroke="#7a6233" stroke-width="1.2" fill="none"/> <circle cx="64" cy="96" r="1.6" fill="#ffe9a8" /> <!-- 货舱满指示 --> <g fill="#58a7bf" opacity=".85"> <rect x="70" y="46" width="4" height="4"/><rect x="77" y="46" width="4" height="4" /> <rect x="84" y="46" width="4" height="4"/> </g>
+</svg>

@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+<defs>
+    <filter id="g1" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="2" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="g2" x="-90%" y="-90%" width="280%" height="280%">
+      <feGaussianBlur stdDeviation="4.5" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <linearGradient id="hull" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#26374a"/><stop offset="100%" stop-color="#0c141d"/>
+    </linearGradient>
+    <radialGradient id="engG">
+      <stop offset="0%" stop-color="#d8f6ff"/><stop offset="45%" stop-color="#58a7bf" stop-opacity=".85"/>
+      <stop offset="100%" stop-color="#58a7bf" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="bgR" cx="50%" cy="45%" r="65%">
+      <stop offset="0%" stop-color="#121d29"/><stop offset="100%" stop-color="#070a0f"/>
+    </radialGradient>
+    <linearGradient id="amber" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffe9a8"/><stop offset="100%" stop-color="#e0b34c"/>
+    </linearGradient>
+    <linearGradient id="laser" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffd9b8"/><stop offset="100%" stop-color="#f39058" stop-opacity=".1"/>
+    </linearGradient>
+  </defs>
+<rect width="128" height="128" rx="8" fill="url(#bgR)"/> <polygon points="64,8 113,36 113,92 64,120 15,92 15,36" fill="none" stroke="#305665" stroke-width="4"/> <polygon points="64,15 106,39 106,89 64,113 22,89 22,39" fill="none" stroke="#1d3a46" stroke-width="1.4"/> <g stroke="#58a7bf" fill="#101a24" filter="url(#g1)"> <path d="M64,34 L74,58 L71,74 L64,69 L57,74 L54,58 Z" stroke-width="2.2"/> <path d="M35,66 L43,82 L41,93 L35,89 L29,93 L27,82 Z" stroke-width="1.8"/> <path d="M93,66 L101,82 L99,93 L93,89 L87,93 L85,82 Z" stroke-width="1.8"/> </g> <g ><circle cx="60" cy="75" r="4" fill="url(#engG)"/><circle cx="68" cy="75" r="4" fill="url(#engG)"/></g> <g fill="#d8f6ff"><circle cx="60" cy="75" r="1.2"/><circle cx="68" cy="75" r="1.2"/></g> <g > <circle cx="31" cy="94" r="3" fill="url(#engG)"/><circle cx="39" cy="94" r="3" fill="url(#engG)"/> <circle cx="89" cy="94" r="3" fill="url(#engG)"/><circle cx="97" cy="94" r="3" fill="url(#engG)"/> </g> <path d="M34,104 Q50,112 62,110 M94,104 Q78,112 66,110" fill="none" stroke="#58a7bf" stroke-width="1.8" filter="url(#g1)" stroke-linecap="round"/> <circle cx="64" cy="7" r="2.4" fill="#d8f6ff" filter="url(#g1)"/>
+</svg>
