@@ -1,6 +1,9 @@
 class_name GameData
 extends RefCounted
 
+# Legacy distances converted to metres; timing and angles are unchanged.
+const U := preload("res://scripts/WorldUnits.gd").LEGACY_TO_METERS
+
 ## 制造系统数据表 v0.1 —— manufacturing.md 草案数值的唯一集中地（M0 统一调平只改这里）。
 ##
 ## 矿石命名约定（2026-09-30 拍板）：
@@ -30,8 +33,8 @@ const ORES := {
 		"weight": 12.0, "price": 24.0, "role": "磁极稀土矿·电磁系统"},
 	"rareC": {"name": "稀有矿C", "asset": "goldenAsteroid", "path": "res://assets/rareOre/goldenAsteroid.glb",
 		"weight": 10.0, "price": 20.0, "role": "铱芯重矿·超重装甲"},
-	"rareD": {"name": "稀有矿D", "asset": "", "path": "",
-		"weight": 6.0, "price": 30.0, "role": "电浆凝矿·电浆储能（模型待做）"},
+	"rareD": {"name": "稀有矿D", "asset": "goldSmallRed", "path": "res://assets/rareOre/goldSmall.glb", "hue_shift": -0.09,
+		"weight": 6.0, "price": 30.0, "role": "电浆凝矿·电浆储能（红色金块占位）"},
 	"rareE": {"name": "稀有矿E", "asset": "goldSmall", "path": "res://assets/rareOre/goldSmall.glb",
 		"weight": 5.0, "price": 40.0, "role": "活性纳米矿·纳米机械"},
 	"fuel": {"name": "燃料冰矿", "asset": "IceOre", "path": "res://assets/NormalOre/IceOre.glb",
@@ -125,11 +128,20 @@ const MODULES := {
 	"container": {"name": "模块化货柜", "desc": "每组 +25% 货舰自动成交速率（装货速度）", "max_count": 4,
 		"cost": {"truss": 1, "cabin": 1}, "time": 240.0, "unit": "组"},
 	# 采矿无人机（2026-09-30 新增，文档外扩展）：建造界面直接解锁，建成免激活自动挖矿
-	"drone": {"name": "采矿无人机", "desc": "自动捕获 S 档矿石拖回站体入库", "max_count": 6,
+	"drone": {"name": "采矿无人机", "desc": "仅捕获普矿与燃料冰矿的 S 型，拖回站体入库", "max_count": 6,
 		"cost": {"commonA": 200}, "time": 90.0, "unit": "架"},
-	# 激光采矿护卫舰（2026-09-30 新增）：环绕 M 档矿用中黄激光开采，货舱满回站卸货
-	"corvette": {"name": "激光采矿护卫舰", "desc": "激光挖掘 M 档矿：5 单位/秒 · 货舱 500", "max_count": 3,
+	# 冲锋者保留 corvette 存档 ID；五种激光矿船随机选择非 S 矿体并保持作业位置。
+	"corvette": {"name": "冲锋者级采矿护卫舰", "desc": "288 m/s · 货舱500 · 最高5单位/秒 · 普矿专长", "max_count": 3,
 		"cost": {"commonA": 500, "commonB": 100}, "time": 180.0, "unit": "艘"},
+	# First-pass construction access; progression and dedicated skills are deferred.
+	"prospector": {"name": "掘金者级采矿突击舰", "desc": "259.2 m/s · 货舱750 · 最高10单位/秒 · 稀有矿专长", "max_count": 3,
+		"cost": {"commonA": 1000, "commonB": 200}, "time": 270.0, "unit": "艘"},
+	"barge": {"name": "回旋采矿船", "desc": "144 m/s · 货舱1500 · 最高15单位/秒 · 持续开采", "max_count": 3,
+		"cost": {"commonA": 2000, "commonB": 400}, "time": 360.0, "unit": "艘"},
+	"orca": {"name": "海豚级采矿指挥舰", "desc": "187.2 m/s · 货舱2000 · 最高10单位/秒 · 光环尚未实装", "max_count": 3,
+		"cost": {"commonA": 3000, "commonB": 600}, "time": 450.0, "unit": "艘"},
+	"hulk": {"name": "霍克级高级采矿船", "desc": "115.2 m/s · 货舱3000 · 最高25单位/秒 · 重型高产", "max_count": 3,
+		"cost": {"commonA": 4000, "commonB": 800}, "time": 540.0, "unit": "艘"},
 	# 雇佣兵巢穴（蓝图 §5.9, 2026-10-04）：等级制, 每级 +1 行动舰队容量
 	"hive": {"name": "雇佣兵巢穴", "desc": "行动舰队容量 +1/级——解锁探索派遣(F6)",
 		"levels": [
@@ -187,11 +199,11 @@ const ECON := {
 	"start_money": 800.0,
 	"build_speed_mult": 10.0,     # 全体建造/生产/研究速度倍率（当前测试期 ×10，M0 调平改回 1.0）
 	"max_order_queue": 20,        # 制造排队上限（单数）
-	"drone_fly_speed": 1.8,       # 无人机飞行速度 m/s（2026-09-30 拍板：原 6.0 降至 30%）
-	"corvette_fly_speed": 2.4,    # 护卫舰飞行速度 m/s（2026-09-30 拍板：原 6.0 降至 40%）
+	"drone_fly_speed": 1.8 * U,       # 无人机飞行速度 m/s（2026-09-30 拍板：原 6.0 降至 30%）
+	"corvette_fly_speed": 2.4 * U,    # 护卫舰飞行速度 m/s（2026-09-30 拍板：原 6.0 降至 40%）
 	"drone_tow_player_ratio": 5.0,    # 无人机拖拽速度 = 玩家拖拽速度 ÷ 5（2026-09-30 拍板）
-	"corvette_mine_rate": 5.0,        # 护卫舰采矿速度 单位/秒（草案）
-	"corvette_cargo": 500.0,          # 护卫舰货舱容量 单位（草案）
+	"corvette_mine_rate": 5.0,        # 旧兼容键；运行参数见 MiningShipStats
+	"corvette_cargo": 500.0,          # 旧兼容键；运行参数见 MiningShipStats
 	"corvette_orbit_speed": 0.27,     # 护卫舰环绕矿体角速度 rad/s（2026-09-30 拍板：原 0.9 降至 30%）
 	# ---------- 战时需求（2026-10-02 拍板：战争期货舰愿意出更高价） ----------
 	# 周期制（按游戏日确定性轮转, 无需额外状态）: 8 天和平 + 4 天战争, 循环往复

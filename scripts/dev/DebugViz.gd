@@ -1,5 +1,8 @@
 extends Node3D
 
+# Legacy distances converted to metres; timing and angles are unchanged.
+const U := preload("res://scripts/WorldUnits.gd").LEGACY_TO_METERS
+
 ## 空间诊断可视化（dev 工具，F9 开关）：
 ## 把所有停靠/避让判定的几何直接画出来——站体世界AABB线框、泊位环、
 ## 到港船包围盒+头向箭头、矿流边界。治"无法感知场景模型位置/边界"的根。
@@ -41,8 +44,10 @@ func _input(event: InputEvent) -> void:
 				_top_cam = Camera3D.new()
 				add_child(_top_cam)
 				_top_cam.fov = 40.0
+				_top_cam.near = 0.05 * U
+				_top_cam.far = 4000.0 * U
 			var t := _hub.global_position if _hub != null and is_instance_valid(_hub) else Vector3.ZERO
-			_top_cam.global_position = t + Vector3(0, 34, 0.001)
+			_top_cam.global_position = t + Vector3(0, 34, 0.001) * U
 			_top_cam.look_at(t, Vector3.UP)
 			_top_cam.make_current()
 		elif _saved_cam != null:
@@ -92,8 +97,8 @@ func _draw_all() -> void:
 			if c is Node3D:
 				var sbox := _world_aabb(c)
 				_draw_box(sbox, Color(0.3, 1, 0.4))
-				var fwd: Vector3 = -c.global_basis.z
-				_line(c.global_position, c.global_position + fwd * 1.6, Color(1, 0.9, 0.2))
+				var fwd: Vector3 = c.global_basis.x
+				_line(c.global_position, c.global_position + fwd * (1.6 * U), Color(1, 0.9, 0.2))
 	_update_labels(box, 0.0)
 
 
@@ -126,8 +131,8 @@ func _draw_box(box: AABB, col: Color) -> void:
 
 
 func _draw_cross(p: Vector3, col: Color) -> void:
-	_line(p - Vector3(0.5, 0, 0), p + Vector3(0.5, 0, 0), col)
-	_line(p - Vector3(0, 0, 0.5), p + Vector3(0, 0, 0.5), col)
+	_line(p - Vector3(0.5, 0, 0) * U, p + Vector3(0.5, 0, 0) * U, col)
+	_line(p - Vector3(0, 0, 0.5) * U, p + Vector3(0, 0, 0.5) * U, col)
 
 
 ## 世界 AABB（沿缩放链, 与 StationModules._measure_station 同算法）
@@ -152,7 +157,7 @@ func _world_aabb(root: Node3D) -> AABB:
 		for ch in n.get_children():
 			stack.append(ch)
 	if first:
-		best = AABB(root.global_position, Vector3(0.4, 0.4, 0.4))
+		best = AABB(root.global_position, Vector3(0.4, 0.4, 0.4) * U)
 	return best
 
 
@@ -161,9 +166,9 @@ func _rebuild_labels() -> void:
 		l.queue_free()
 	_labels.clear()
 	var l1 := _mk_label("站体 AABB（橙）· 泊位环+泊位点（青）· 船盒+头向（绿/黄）")
-	l1.position = Vector3(0, 6, 0)
+	l1.position = Vector3(0, 6, 0) * U
 	var l2 := _mk_label("")
-	l2.position = Vector3(0, 5.4, 0)
+	l2.position = Vector3(0, 5.4, 0) * U
 	_labels = [l1, l2]
 
 
@@ -172,7 +177,7 @@ func _mk_label(t: String) -> Label3D:
 	l.text = t
 	l.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	l.no_depth_test = true
-	l.pixel_size = 0.004
+	l.pixel_size = 0.004 * U
 	l.font_size = 40
 	l.outline_size = 8
 	l.modulate = Color(0.6, 1, 0.8)
@@ -190,5 +195,5 @@ func _update_labels(box: AABB, _half_w: float) -> void:
 			rr, sm2._dock_center.x if sm2 != null else 0.0,
 			sm2._dock_center.y if sm2 != null else 0.0,
 			sm2._dock_plane_y if sm2 != null else 0.0]
-		_labels[1].global_position = _hub.global_position + Vector3(0, 5.4, 0)
-		_labels[0].global_position = _hub.global_position + Vector3(0, 6.0, 0)
+		_labels[1].global_position = _hub.global_position + Vector3(0, 5.4, 0) * U
+		_labels[0].global_position = _hub.global_position + Vector3(0, 6.0, 0) * U

@@ -1,5 +1,8 @@
 extends Node3D
 
+# Legacy distances converted to metres; timing and angles are unchanged.
+const U := preload("res://scripts/WorldUnits.gd").LEGACY_TO_METERS
+
 ## 采矿无人机端到端测试（headless）：
 ## godot --headless --path . res://tests/drone_mining_test.tscn
 ## 最小 3D 环境(MiningHub+BeltFlow) → 建无人机(普矿A) → 强制完工 →
@@ -16,6 +19,14 @@ func _check(cond: bool, what: String) -> void:
 
 
 func _ready() -> void:
+	# Beam billboards need a finite camera position even in headless tests.
+	var camera := Camera3D.new()
+	camera.position = Vector3(40, 30, 40) * U
+	camera.near = 0.05 * U
+	camera.far = 4000.0 * U
+	add_child(camera)
+	camera.look_at(Vector3.ZERO)
+	camera.make_current()
 	await get_tree().process_frame  # Economy 的 deferred 世界/UI 挂载
 	Economy.debug_instant = true
 	Economy.save_path = "user://drone_test_save.json"
@@ -27,11 +38,11 @@ func _ready() -> void:
 	add_child(hub)
 	var belt := (load("res://sences/BeltFlow.tscn") as PackedScene).instantiate()
 	belt.target_count = 40
-	belt.spawn_center = Vector3(-25, 0, 0)
-	belt.spawn_size = Vector3(4, 6, 8)
-	belt.despawn_center = Vector3(25, 0, 0)
-	belt.despawn_size = Vector3(4, 6, 8)
-	belt.station_clear_radius = 2.0
+	belt.spawn_center = Vector3(-25, 0, 0) * U
+	belt.spawn_size = Vector3(4, 6, 8) * U
+	belt.despawn_center = Vector3(25, 0, 0) * U
+	belt.despawn_size = Vector3(4, 6, 8) * U
+	belt.station_clear_radius = 2.0 * U
 	add_child(belt)
 
 	# ---- 建造（建造界面直接解锁，只卡材料）----

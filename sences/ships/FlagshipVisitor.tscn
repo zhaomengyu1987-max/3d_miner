@@ -1,0 +1,56 @@
+[gd_scene format=3 uid="uid://djwg0atmq5gmd"]
+
+[ext_resource type="Script" uid="uid://8pnhtqdaaypv" path="res://scripts/ships/VisitorShip.gd" id="1"]
+[ext_resource type="PackedScene" uid="uid://di6efq2ls41xi" path="res://assets/visitors/flagShipStandard.glb" id="2"]
+[ext_resource type="PackedScene" path="res://sences/ships/Cannon1400.tscn" id="3"]
+[ext_resource type="PackedScene" path="res://scenes/fx/engine_exhaust.tscn" id="4"]
+
+[node name="FlagshipVisitor" type="Node3D" unique_id=474522863]
+script = ExtResource("1")
+hull_name = "旗舰"
+hull_length = 530.9215
+hull_height = 124.7539
+cruise_speed = 48.0
+acceleration = 12.0
+turn_rate = 15.0
+hull_color = Color(0.95, 0.95, 0.95, 1)
+
+[node name="VisualBasis" type="Node3D" parent="." unique_id=1225489643]
+
+[node name="Hull" parent="VisualBasis" unique_id=1443633058 instance=ExtResource("2")]
+
+[node name="Cannon1" parent="VisualBasis" unique_id=1972778796 instance=ExtResource("3")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 21.334475, 44.13903, -2.572586)
+
+[node name="Cannon2" parent="VisualBasis" unique_id=1023642685 instance=ExtResource("3")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 48.539837, 36.32136, -3.7167969)
+
+[node name="Exhaust1" parent="VisualBasis" unique_id=1271272772 instance=ExtResource("4")]
+transform = Transform3D(2, 0, 0, 0, 2, 0, 0, 0, 2, -251.41977, 10.1058855, -7.849212)
+editor_preview_mode = 1
+trail_length_scale = 0.06
+
+[node name="Exhaust2" parent="VisualBasis" unique_id=903716548 instance=ExtResource("4")]
+transform = Transform3D(2, 0, 0, 0, 2, 0, 0, 0, 2, -251.41977, -2.2967768, -7.849212)
+editor_preview_mode = 1
+trail_length_scale = 0.06
+
+[node name="Exhaust3" parent="VisualBasis" unique_id=1887950703 instance=ExtResource("4")]
+transform = Transform3D(2, 0, 0, 0, 2, 0, 0, 0, 2, -251.41977, -13.867049, -7.849212)
+editor_preview_mode = 1
+trail_length_scale = 0.06
+
+[node name="Exhaust4" parent="VisualBasis" unique_id=1448555705 instance=ExtResource("4")]
+transform = Transform3D(2, 0, 0, 0, 2, 0, 0, 0, 2, -251.41977, 10.1058855, 5.8297887)
+editor_preview_mode = 1
+trail_length_scale = 0.06
+
+[node name="Exhaust5" parent="VisualBasis" unique_id=1933030282 instance=ExtResource("4")]
+transform = Transform3D(2, 0, 0, 0, 2, 0, 0, 0, 2, -251.41977, -2.4077635, 5.885281)
+editor_preview_mode = 1
+trail_length_scale = 0.06
+
+[node name="Exhaust6" parent="VisualBasis" unique_id=1039004484 instance=ExtResource("4")]
+transform = Transform3D(2, 0, 0, 0, 2, 0, 0, 0, 2, -251.41977, -13.728316, 5.8297887)
+editor_preview_mode = 1
+trail_length_scale = 0.06

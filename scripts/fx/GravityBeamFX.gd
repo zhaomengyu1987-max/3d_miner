@@ -1,19 +1,22 @@
 class_name GravityBeamFX
 extends MultiMeshInstance3D
 
+# Legacy distances converted to metres; timing and angles are unchanged.
+const U := preload("res://scripts/WorldUnits.gd").LEGACY_TO_METERS
+
 ## 引力捕获光束渲染器 —— 磁轨炮 EVE blast.fx 复刻移植版（持续型）
 ## 原型: E:\godot乱弄2\aitest\aitest scripts/fx/beam_renderer.gd (BeamRenderer)
 ## 差异: 容量 8 / 持续型生命周期（spawn 后常亮, kill 后 FADE_TIME 淡出）
 ##       / 无 LOD 恒 L0 全效 / 束宽缩小到炮舰级 / 断言端点失效自动熄灭
 ## 材质: assets/fx/rail/rail_blast.tres（云图+双 LUT+噪声+ramp 图集）
-## COLOR=(tint.rgb, 亮度) ｜ INSTANCE_CUSTOM=(相位, ramp行0=磁轨蓝, LOD, 束长m)
+## COLOR=(tint.rgb, 亮度) ｜ INSTANCE_CUSTOM=(相位, ramp行0=磁轨蓝, LOD, 旧美术单位束长)
 
 const CAPACITY := 8
 const FADE_TIME := 0.25
 const RACE_TIME := 0.25    # 光束从炮口"伸到"目标的时长
 const HOLD_ALPHA := 0.65
 
-@export var beam_half_width := 0.135
+@export var beam_half_width := 0.135 * U
 ## 远档色调(近档颜色由 ramp 行决定, 磁轨行偏蓝)
 @export var beam_tint := Color(0.55, 0.75, 1.0)
 ## ramp 图集行号(束类型): 0磁轨蓝 / 1红 / 2绿 / 3橙金(中黄激光用这个) / 4重型磁轨蓝紫
@@ -155,7 +158,7 @@ func _update_instance(i: int, cam_pos: Vector3) -> void:
 		to = to_local((dst as Node3D).global_position)
 	var full_len := from.distance_to(to)
 	var tint := beam_tint
-	if full_len < 0.05:
+	if full_len < 0.05 * U:
 		multimesh.set_instance_transform(i,
 			Transform3D(Basis().scaled(Vector3.ONE * 0.001), from))
 		multimesh.set_instance_color(i, Color(tint.r, tint.g, tint.b, 0.0))
@@ -170,7 +173,7 @@ func _update_instance(i: int, cam_pos: Vector3) -> void:
 	# 面片朝向相机: 侧轴 = 束向 × 视线
 	var view := cam_pos - mid
 	var side := dir.cross(view)
-	if side.length_squared() < 1.0:
+	if side.length_squared() < U * U:
 		side = dir.cross(Vector3.UP)
 		if side.length_squared() < 1.0:
 			side = dir.cross(Vector3.FORWARD)
@@ -182,4 +185,4 @@ func _update_instance(i: int, cam_pos: Vector3) -> void:
 	if _state[i] == 2:
 		alpha = HOLD_ALPHA * (1.0 - clampf(_t[i] / _dur[i], 0.0, 1.0))
 	multimesh.set_instance_color(i, Color(tint.r, tint.g, tint.b, alpha))
-	multimesh.set_instance_custom_data(i, Color(_phase[i], ramp_row, 0.0, len))
+	multimesh.set_instance_custom_data(i, Color(_phase[i], ramp_row, 0.0, len / U))

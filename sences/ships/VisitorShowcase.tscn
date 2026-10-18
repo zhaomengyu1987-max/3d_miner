@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://dahela8i67gt1"]
+
+[ext_resource type="Script" uid="uid://cau0lmruwu30j" path="res://scripts/dev/VisitorShowcase.gd" id="1"]
+
+[node name="VisitorShowcase" type="Node3D" unique_id=1602651323]
+script = ExtResource("1")

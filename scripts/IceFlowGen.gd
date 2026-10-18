@@ -2,6 +2,9 @@
 class_name IceFlow
 extends Node3D
 
+# Legacy distances converted to metres; timing and angles are unchanged.
+const U := preload("res://scripts/WorldUnits.gd").LEGACY_TO_METERS
+
 ## 纯表演层冰流 v2 —— GPUParticles3D 引擎原生粒子流
 ## 设计原则: 零 @tool / 零编辑器预览 / 零 MultiMesh 手工管理
 ## 编辑器内本节点不可见(设计使然); F5 运行时生成, 脚本永远从磁盘新载
@@ -15,19 +18,19 @@ const SYSTEM_COUNT := 6  # 每种冰块一个粒子系统
 
 @export_group("冰带体积(发射区)")
 ## 流动方向上的长度(米)
-@export var field_length := 150.0:
+@export var field_length := 150.0 * U:
 	set(v):
-		field_length = maxf(v, 10.0)
+		field_length = maxf(v, 10.0 * U)
 		_update_debug()
 ## 宽度(米)
-@export var field_width := 100.0:
+@export var field_width := 100.0 * U:
 	set(v):
-		field_width = maxf(v, 5.0)
+		field_width = maxf(v, 5.0 * U)
 		_update_debug()
 ## 垂直厚度(米) —— 体积的关键参数
-@export var field_thickness := 15.0:
+@export var field_thickness := 15.0 * U:
 	set(v):
-		field_thickness = maxf(v, 1.0)
+		field_thickness = maxf(v, 1.0 * U)
 		_update_debug()
 
 @export_group("流动")
@@ -36,14 +39,14 @@ const SYSTEM_COUNT := 6  # 每种冰块一个粒子系统
 		flow_direction = v.normalized() if v.length_squared() > 0.001 else Vector3(1, 0, 0)
 		_update_debug()
 ## 基础流速(m/s), 6 个系统在其 ±speed_variance/2 内均布 → 差速
-@export var flow_speed := 5.0
-@export var speed_variance := 3.0
+@export var flow_speed := 5.0 * U
+@export var speed_variance := 3.0 * U
 
 @export_group("冰块")
 @export var total_count := 6000
 ## 缩放是乘在原始网格(~0.06m)上的倍率: 8~30 → 0.5~1.8m 冰块
-@export var scale_min := 8.0
-@export var scale_max := 30.0
+@export var scale_min := 8.0 * U
+@export var scale_max := 30.0 * U
 ## 自转速度范围(rad/s)
 @export var spin_min := 0.5
 @export var spin_max := 3.0
@@ -88,7 +91,7 @@ func _build() -> void:
 		# 差速: 系统速度在 [speed-var/2, speed+var/2] 均布
 		var speed: float = flow_speed - speed_variance * 0.5 \
 			+ speed_variance * float(i) / float(SYSTEM_COUNT - 1)
-		var lifetime: float = field_length / maxf(speed, 0.1)
+		var lifetime: float = field_length / maxf(speed, 0.1 * U)
 		last_lifetime = lifetime
 		var p := GPUParticles3D.new()
 		p.name = "Ice_%d" % i
@@ -101,7 +104,7 @@ func _build() -> void:
 		# 发射区 = 上游边缘的一片薄板: 粒子从边缘出生(视野外), 飘完全程在下游消失
 		# — 而不是全体积随机出生(那就是"凭空出现")
 		pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
-		pm.emission_box_extents = Vector3(0.5, field_thickness * 0.5, field_width * 0.5)
+		pm.emission_box_extents = Vector3(0.5 * U, field_thickness * 0.5, field_width * 0.5)
 		pm.direction = dir
 		pm.spread = 0.0
 		pm.initial_velocity_min = speed
@@ -123,8 +126,8 @@ func _build() -> void:
 		p.process_material = pm
 		p.position = -dir * field_length * 0.5  # 系统节点放在上游边缘
 		# 可见性 AABB 必须罩住"出生板+整段飞行路径", 否则相机稍偏整个系统被剔除(经典坑)
-		var aabb_size := Vector3(field_length + 2.0, field_thickness + 2.0, field_width + 2.0) \
-			+ dir.abs() * 2.0
+		var aabb_size := Vector3(field_length + 2.0 * U, field_thickness + 2.0 * U, field_width + 2.0 * U) \
+			+ dir.abs() * (2.0 * U)
 		p.visibility_aabb = AABB(dir * field_length * 0.5 - aabb_size * 0.5, aabb_size)
 		add_child(p)
 		_systems.append(p)
@@ -169,7 +172,7 @@ func _update_debug() -> void:
 	_dbg_volume = _ensure_box(_dbg_volume, "DEBUG_Volume", Color(0.3, 0.8, 1.0, 0.25),
 		Vector3.ZERO, Vector3(field_length, field_thickness, field_width), dir)
 	_dbg_slab = _ensure_box(_dbg_slab, "DEBUG_SpawnEdge", Color(0.2, 1.0, 0.4),
-		-dir * field_length * 0.5, Vector3(1.0, field_thickness, field_width), dir)
+		-dir * field_length * 0.5, Vector3(1.0 * U, field_thickness, field_width), dir)
 	if _dbg_volume:
 		_dbg_volume.visible = show_debug_zones
 	if _dbg_slab:

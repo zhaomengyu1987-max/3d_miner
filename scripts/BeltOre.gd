@@ -1,10 +1,14 @@
 class_name BeltOre
 extends RigidBody3D
 
+# Legacy distances converted to metres; timing and angles are unchanged.
+const U := preload("res://scripts/WorldUnits.gd").LEGACY_TO_METERS
+
 ## 单颗可玩矿石: RigidBody 物理体(重力归零, 仅与同类矿石碰撞)
 ## 漂移 = 恒定 linear_velocity(逐帧重申, 碰撞只做位置分离不改航线)
 ## 捕获 = 速度指向空间站; 回收 = 冻结 + 碰撞层归零(不占池不挡路)
 
+var generation := 0
 var ore_name := ""
 var tier := "S"
 var amount := 100
@@ -15,17 +19,23 @@ var mesh_instance: MeshInstance3D
 var age := 0.0                    # 存活计时(秒): BeltFlow 最长存活保险丝用
 # 捕获态: 被空间站引力光束拉拽
 var captured := false
+var fracturing := false
+var heat_level := 0.0
+var _heat_cooling := false
+var _heat_material: ShaderMaterial
+var _heat_faces := PackedVector3Array()
+var _heat_marks := PackedVector3Array()
 ## 无人机拖曳标记: true 时玩家松开鼠标不会释放它(_release_all 豁免), 回收时复位
 var auto_towed := false
 var pull_target: Node3D
-var pull_speed := 14.0
+var pull_speed := 14.0 * U
 var _spin_saved := 0.0
 var _spin_captured := 0.0
 var _spin_recover_time := 0.0
 var _spin_recover_total := 1.0
 var _sphere: SphereShape3D
 ## 下游偏置推力(m/s²): 碰撞/避让后帮矿恢复正向漂移, 防徘徊
-@export var drift_bias := 3.0
+@export var drift_bias := 3.0 * U
 
 const OUTLINE_SHADER := preload("res://shaders/outline_hull.gdshader")
 
@@ -89,7 +99,7 @@ func _init() -> void:
 	physics_material_override = pm
 	var col := CollisionShape3D.new()
 	_sphere = SphereShape3D.new()
-	_sphere.radius = 0.4
+	_sphere.radius = 0.4 * U
 	col.shape = _sphere
 	add_child(col)
 
@@ -97,6 +107,9 @@ func _init() -> void:
 func setup(p_name: String, mesh: Mesh, p_tier: String, p_amount: int,
 		p_velocity: Vector3, scale_f: float, radius: float,
 		spin_min: float, spin_max: float) -> void:
+	generation += 1
+	_clear_heat()
+	fracturing = false
 	ore_name = p_name
 	tier = p_tier
 	amount = p_amount
@@ -113,10 +126,19 @@ func setup(p_name: String, mesh: Mesh, p_tier: String, p_amount: int,
 	spin_axis = spin_axis.normalized()
 	spin_speed = randf_range(spin_min, spin_max)
 	_spin_saved = spin_speed
-	_sphere.radius = maxf(radius, 0.05)
+	_sphere.radius = maxf(radius, 0.05 * U)
 	if mesh_instance == null:
 		mesh_instance = MeshInstance3D.new()
 		add_child(mesh_instance)
+	# Hover restoration leaves per-surface overrides on the old mesh. Pool reuse
+	# must discard those before switching minerals (e.g. gold -> fuel ice).
+	if _hover:
+		_on_hover(false)
+	if mesh_instance.mesh != null:
+		for surface in mesh_instance.mesh.get_surface_count():
+			mesh_instance.set_surface_override_material(surface, null)
+	_orig_mats.clear()
+	mesh_instance.material_override = null
 	mesh_instance.mesh = mesh
 	mesh_instance.scale = Vector3.ONE * scale_f
 	name = "Ore_%s_%s" % [p_name, tier]
@@ -125,6 +147,15 @@ func setup(p_name: String, mesh: Mesh, p_tier: String, p_amount: int,
 ## 护卫舰激光挖掘: 扣减储量(到 0 由调用方回收进池)
 func mine_units(u: int) -> void:
 	amount = maxi(amount - u, 0)
+
+
+## Atomic gameplay extraction: captured/recycled ore cannot be mined or overdrawn.
+func extract_units(requested: int) -> int:
+	if captured or not visible or amount <= 0:
+		return 0
+	var taken := mini(maxi(requested, 0), amount)
+	amount -= taken
+	return taken
 
 
 ## 碰撞球半径(米) = 归一化后的视觉尺寸一半; 供接近/环绕距离计算
@@ -148,6 +179,7 @@ func start_capture(target: Node3D, p_speed: float, spin: float) -> void:
 ## recover_time > 0 时自转在此时长内从捕获速度线性回落到漂移速度; 0 = 立即恢复
 func stop_capture(recover_time := 0.0) -> void:
 	captured = false
+	fracturing = false
 	pull_target = null
 	if recover_time > 0.0 and spin_speed > _spin_saved:
 		_spin_captured = spin_speed
@@ -163,6 +195,7 @@ func set_drifting(on: bool) -> void:
 	visible = on
 	freeze = not on  # 池中矿冻结: 零模拟开销
 	if not on:
+		_clear_heat()
 		if _hover:
 			_on_hover(false)  # 回收时若正被悬停, 清描边与提示
 		auto_towed = false
@@ -184,11 +217,98 @@ func _physics_process(delta: float) -> void:
 		spin_speed = lerpf(_spin_captured, _spin_saved, t)
 		angular_velocity = spin_axis * spin_speed
 	if captured:
+		if fracturing:
+			return # Keep drift and spin; fracture is not translational towing.
 		if is_instance_valid(pull_target):
 			var d := pull_target.global_position - global_position
-			if d.length_squared() > 0.0001:
+			if d.length_squared() > 0.0001 * U * U:
 				linear_velocity = d.normalized() * pull_speed
 		return
 	# 下游偏置: 碰撞/避让后微弱正向(X+)推力, 防徘徊(只对本应正向漂移的矿有效)
 	if drift_bias > 0.0 and velocity.x > 0.0 and linear_velocity.x < velocity.x:
 		linear_velocity.x = move_toward(linear_velocity.x, velocity.x, drift_bias * delta)
+
+
+func heat_surface(world_hit: Vector3, progress: float) -> void:
+	if mesh_instance == null:
+		return
+	if _heat_material == null:
+		_heat_material = ShaderMaterial.new()
+		_heat_material.shader = preload("res://shaders/ore_heat.gdshader")
+		var bounds := mesh_instance.mesh.get_aabb()
+		_heat_material.set_shader_parameter("mesh_radius", bounds.size.length() * 0.5)
+		mesh_instance.material_overlay = _heat_material
+		_heat_faces = mesh_instance.mesh.get_faces()
+	var bounds := mesh_instance.mesh.get_aabb()
+	var radius := maxf(bounds.size.length() * 0.5, 0.0001)
+	var local_hit := mesh_instance.to_local(world_hit)
+	var center := mesh_instance.to_local(global_position)
+	var direction := (local_hit - center).normalized()
+	var ray_start := center + direction * radius * 4.0
+	var nearest := local_hit
+	var best_distance := INF
+	# Exact front surface on the beam's centre ray, not an approximate bounding sphere.
+	for i in range(0, _heat_faces.size(), 3):
+		var hit: Variant = Geometry3D.segment_intersects_triangle(ray_start, center - direction * radius * 4.0,
+			_heat_faces[i], _heat_faces[i + 1], _heat_faces[i + 2])
+		if hit != null:
+			var distance: float = ray_start.distance_squared_to(hit)
+			if distance < best_distance:
+				best_distance = distance
+				nearest = hit
+	local_hit = nearest
+	_heat_material.set_shader_parameter("hotspot_origin", local_hit)
+	if _heat_marks.is_empty():
+		_heat_material.set_shader_parameter("heat_origin", local_hit)
+		var extent := 0.0
+		for i in 8:
+			extent = maxf(extent, local_hit.distance_to(bounds.get_endpoint(i)) / radius)
+		_heat_material.set_shader_parameter("heat_extent", extent)
+	var fresh := true
+	for mark in _heat_marks:
+		if mark.distance_to(local_hit) < radius * 0.12:
+			fresh = false
+			break
+	if fresh and _heat_marks.size() < 32:
+		_heat_marks.append(local_hit)
+		var upload := PackedVector3Array(_heat_marks)
+		upload.resize(32)
+		_heat_material.set_shader_parameter("paint_marks", upload)
+		_heat_material.set_shader_parameter("paint_count", _heat_marks.size())
+	_heat_cooling = false
+	heat_level = 1.0
+	_heat_material.set_shader_parameter("hotspot", 1.0)
+	_heat_material.set_shader_parameter("spread", clampf(progress, 0.0, 1.0))
+	_heat_material.set_shader_parameter("heat", heat_level)
+
+
+func start_cooling(full_body := false) -> void:
+	if full_body:
+		heat_surface(global_position, 1.0)
+	_heat_cooling = _heat_material != null
+	if _heat_material != null:
+		_heat_material.set_shader_parameter("hotspot", 0.0)
+
+
+func _process(delta: float) -> void:
+	if _heat_cooling:
+		heat_level = maxf(0.0, heat_level - delta / 3.0)
+		_heat_material.set_shader_parameter("heat", heat_level)
+		if heat_level <= 0.0:
+			_clear_heat()
+
+
+func _clear_heat() -> void:
+	if mesh_instance != null:
+		mesh_instance.material_overlay = null
+	_heat_material = null
+	_heat_faces.clear()
+	_heat_marks.clear()
+	heat_level = 0.0
+	_heat_cooling = false
+
+
+func heat_contact_world() -> Vector3:
+	if _heat_material != null:
+		return mesh_instance.to_global(_heat_material.get_shader_parameter("hotspot_origin"))
+	return global_position

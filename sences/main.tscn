@@ -20,36 +20,37 @@ adjustment_saturation = 1.08
 [node name="Main" type="Node3D" unique_id=1697865878]
 
 [node name="Camera3D" type="Camera3D" parent="." unique_id=473496762]
-transform = Transform3D(1, 0, 0, 0, 0.34379843, 0.93904346, 0, -0.93904346, 0.34379843, 1.7089748, 18, 10)
+transform = Transform3D(1, 0, 0, 0, 0.34379843, 0.93904346, 0, -0.93904346, 0.34379843, 205.076976, 2160, 1200)
 current = true
 fov = 62.5
-near = 0.036
+near = 4.32
+far = 480000
 script = ExtResource("1_r4dii")
-limit_y_max = 18.0
+limit_y_max = 2160
 
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=965481846]
-transform = Transform3D(0.98146236, -0.14641705, -0.12366777, -0.0747039, -0.8864852, 0.4566872, -0.17649643, -0.43898287, -0.8809899, 9.746216, 24.017136, 4.38665)
+transform = Transform3D(0.98146236, -0.14641705, -0.12366777, -0.0747039, -0.8864852, 0.4566872, -0.17649643, -0.43898287, -0.8809899, 1169.54592, 2882.05632, 526.398)
 light_color = Color(0.89411765, 0.95686275, 0.96862745, 1)
 light_energy = 3.0
 light_indirect_energy = 1.895
 directional_shadow_mode = 0
-directional_shadow_max_distance = 10.0
+directional_shadow_max_distance = 1200
 sky_mode = 1
 
 [node name="MiningHub" parent="." unique_id=497343975 instance=ExtResource("2_1j6d1")]
 
 [node name="StationSpotA" type="SpotLight3D" parent="MiningHub" unique_id=893310007]
-transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, -15, 2, 8)
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, -1800, 240, 960)
 light_color = Color(0.6, 0.8, 1, 1)
 light_energy = 6.0
-spot_range = 45.0
+spot_range = 5400
 spot_attenuation = 1.2
 spot_angle = 32.0
 
 [node name="BeltFlow" parent="." unique_id=2112670759 instance=ExtResource("4_40i81")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 14.053265, -2.689969, -8.207104)
-flow_speed = 0.77
-speed_variance = 0.5
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1686.3918, -322.79628, -984.85248)
+flow_speed = 92.4
+speed_variance = 60
 target_count = 400
 spin_speed_min = 0.33
 spin_speed_max = 0.5
@@ -60,31 +61,31 @@ tier_m_weight = 32.0
 tier_l_weight = 3.0
 tier_xl_weight = 1.0
 beam_color = Color(0.25, 0.65, 1, 0.5)
-station_clear_radius = 6.0
+station_clear_radius = 720
 
 [node name="IceFlow" parent="." unique_id=577035756 instance=ExtResource("6_3dblt")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 0.75953937, -6.0505867, -11.910551, -18.48338)
-field_thickness = 10.0
-flow_speed = 0.2
-speed_variance = 0.1
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 0.75953937, -726.070404, -1429.26612, -2218.0056)
+field_thickness = 1200
+flow_speed = 24
+speed_variance = 12
 total_count = 1000
-scale_min = 10.0
-scale_max = 11.0
+scale_min = 1200
+scale_max = 1320
 spin_min = 1.0
 spin_max = 2.0
 
 [node name="PlanetSurface" parent="." unique_id=352280755 instance=ExtResource("5_mqxhw")]
-transform = Transform3D(1, 0, 0, 0, 0.9967051, -0.081110805, 0, 0.081110805, 0.9967051, 125.82445, -275.0681, -167.14005)
+transform = Transform3D(1, 0, 0, 0, 0.9967051, -0.081110805, 0, 0.081110805, 0.9967051, 15098.934, -33008.172, -20056.806)
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=959860228]
 environment = SubResource("Environment_jq8tk")
 
 [node name="OmniLight3D" type="OmniLight3D" parent="." unique_id=1737578328]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 37.920456, 7.466568, -15.418301)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 4550.45472, 895.98816, -1850.19612)
 light_energy = 1.5
 light_negative = true
 light_specular = 0.0
-omni_range = 100.0
+omni_range = 12000
 omni_attenuation = 0.05
 
 [node name="TimeWarp" type="Node" parent="." unique_id=1419856581]

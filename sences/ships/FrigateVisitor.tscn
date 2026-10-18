@@ -1,0 +1,33 @@
+[gd_scene load_steps=5 format=3]
+[ext_resource type="Script" path="res://scripts/ships/VisitorShip.gd" id="1"]
+[ext_resource type="PackedScene" path="res://assets/visitors/frigateBasic.glb" id="2"]
+[ext_resource type="PackedScene" path="res://sences/ships/Cannon1400.tscn" id="3"]
+[ext_resource type="PackedScene" path="res://scenes/fx/engine_exhaust.tscn" id="4"]
+[node name="FrigateVisitor" type="Node3D"]
+script = ExtResource("1")
+hull_name = "护卫舰"
+hull_length = 86.7873
+hull_height = 14.7226
+cruise_speed = 72.0
+acceleration = 30.0
+turn_rate = 60.0
+[node name="VisualBasis" type="Node3D" parent="."]
+[node name="Hull" parent="VisualBasis" instance=ExtResource("2")]
+[node name="Cannon1" parent="VisualBasis" instance=ExtResource("3")]
+position = Vector3(0, 6, 0)
+scale = Vector3(0.32, 0.32, 0.32)
+[node name="Exhaust1" parent="VisualBasis" instance=ExtResource("4")]
+position = Vector3(-44.343487, 4.0462866, 2.6070428)
+scale = Vector3(0.6, 0.6, 0.6)
+trail_length_scale = 0.06
+editor_preview_mode = 1
+[node name="Exhaust2" parent="VisualBasis" instance=ExtResource("4")]
+position = Vector3(-44.343487, 4.0462866, -1.02824)
+scale = Vector3(0.6, 0.6, 0.6)
+trail_length_scale = 0.06
+editor_preview_mode = 1
+[node name="Exhaust3" parent="VisualBasis" instance=ExtResource("4")]
+position = Vector3(-44.343487, 0.90154815, 0.6974242)
+scale = Vector3(0.6, 0.6, 0.6)
+trail_length_scale = 0.06
+editor_preview_mode = 1

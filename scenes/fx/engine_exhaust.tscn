@@ -1,0 +1,36 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/fx/engine_exhaust.gd" id="1"]
+[ext_resource type="PackedScene" path="res://assets/fx/engine/engine_sphere.glb" id="2"]
+[ext_resource type="PackedScene" path="res://assets/fx/engine/engine_mainfire.glb" id="3"]
+[ext_resource type="PackedScene" path="res://assets/fx/engine/engine_trail.glb" id="4"]
+[ext_resource type="ArrayMesh" path="res://assets/fx/engine/engine_ring_inner.res" id="5"]
+[ext_resource type="ArrayMesh" path="res://assets/fx/engine/engine_ring_outer.res" id="6"]
+[ext_resource type="Material" path="res://assets/fx/engine/ring_middle_layer.tres" id="7"]
+
+[node name="EngineExhaust" type="Node3D" unique_id=903716548]
+script = ExtResource("1")
+
+[node name="Sphere" parent="." unique_id=894247590 instance=ExtResource("2")]
+
+[node name="MainFire" parent="." unique_id=1300168774 instance=ExtResource("3")]
+
+[node name="Trail" parent="." unique_id=1310169098 instance=ExtResource("4")]
+
+[node name="InnerRingPivot" type="Node3D" parent="." unique_id=174840261]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.9047034, -0.0146217, -0.1004295)
+
+[node name="Model" type="MeshInstance3D" parent="InnerRingPivot" unique_id=1203223499]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.9047034, 0.0146217, 0.1004295)
+material_override = ExtResource("7")
+cast_shadow = 0
+mesh = ExtResource("5")
+
+[node name="OuterRingPivot" type="Node3D" parent="." unique_id=1383371982]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.9047034, -0.0146217, -0.1004295)
+
+[node name="Model" type="MeshInstance3D" parent="OuterRingPivot" unique_id=874190555]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.9047034, 0.0146217, 0.1004295)
+material_override = ExtResource("7")
+cast_shadow = 0
+mesh = ExtResource("6")

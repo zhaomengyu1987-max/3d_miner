@@ -2,25 +2,28 @@
 class_name IceBelt
 extends Node3D
 
+# Legacy distances converted to metres; timing and angles are unchanged.
+const U := preload("res://scripts/WorldUnits.gd").LEGACY_TO_METERS
+
 ## 矩形碎冰带生成器（编辑器内实时重建）
 ## 资源: res://assets/models/ice/ice_chunks.glb 内 6 个 IceChunk_S0x 节点
 
 const CHUNKS_SCENE := "res://assets/models/ice/ice_chunks.glb"
 const MAX_INSTANCES := 50000
 ## scale 手柄的参考尺寸: scale=(1,1,1) 对应 30×12 的带区
-const REF_LENGTH := 30.0
-const REF_WIDTH := 12.0
+const REF_LENGTH := 30.0 * U
+const REF_WIDTH := 12.0 * U
 
-@export var belt_length := 30.0:
+@export var belt_length := 30.0 * U:
 	set(v):
-		belt_length = maxf(v, 0.5)
+		belt_length = maxf(v, 0.5 * U)
 		_rebuild()
-@export var belt_width := 12.0:
+@export var belt_width := 12.0 * U:
 	set(v):
-		belt_width = maxf(v, 0.5)
+		belt_width = maxf(v, 0.5 * U)
 		_rebuild()
 ## 每平方米碎冰数量(网格步长 = 1/√density; 改动会重铺网格, 长宽调整则只动边缘)
-@export var density := 2.0:
+@export var density := 2.0 / (U * U):
 	set(v):
 		density = maxf(v, 0.0)
 		_rebuild()
@@ -30,9 +33,9 @@ const REF_WIDTH := 12.0
 		seed_value = v
 		_rebuild()
 ## 碎冰基础缩放（原始块仅 2~6cm）
-@export var chunk_scale := 4.0:
+@export var chunk_scale := 4.0 * U:
 	set(v):
-		chunk_scale = maxf(v, 0.05)
+		chunk_scale = maxf(v, 0.05 * U)
 		_rebuild()
 @export var scale_min := 0.7:
 	set(v):
@@ -42,7 +45,7 @@ const REF_WIDTH := 12.0
 	set(v):
 		scale_max = maxf(v, 0.05)
 		_rebuild()
-@export var height_jitter := 0.08
+@export var height_jitter := 0.08 * U
 ## true = 全方位随机翻滚朝向; false = 平躺(随机偏航 + tilt_max 内倾斜)
 @export var tumble := true:
 	set(v):
@@ -80,8 +83,8 @@ func _set(property: StringName, value: Variant) -> bool:
 			v = Vector3(float(a[0]), float(a[1]), float(a[2]))
 		else:
 			return false
-		belt_length = clampf(REF_LENGTH * v.x, 0.5, 5000.0)
-		belt_width = clampf(REF_WIDTH * maxf(v.z, 0.001), 0.5, 5000.0)
+		belt_length = clampf(REF_LENGTH * v.x, 0.5 * U, 5000.0 * U)
+		belt_width = clampf(REF_WIDTH * maxf(v.z, 0.001), 0.5 * U, 5000.0 * U)
 		return true
 	return false
 
@@ -105,7 +108,7 @@ func _rebuild() -> void:
 			c.free()
 	# 确定性网格散布: 每格内容由 hash(格坐标, seed) 决定, 与带区尺寸无关。
 	# 改 belt_length/width 只改变"哪些格子在带区内" —— 边缘增减冰块, 存量不动。
-	var step := 1.0 / sqrt(maxf(density, 0.01))
+	var step := 1.0 / sqrt(maxf(density, 0.01 / (U * U)))
 	var nx := int(ceil(belt_length / step))
 	var nz := int(ceil(belt_width / step))
 	if nx * nz > MAX_INSTANCES:

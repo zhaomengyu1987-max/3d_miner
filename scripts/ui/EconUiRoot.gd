@@ -436,7 +436,7 @@ func _build_popup() -> void:
 	for id in GameData.MODULES:
 		# 无人机/护卫舰是量产单元, 统一走"空间站建造"面板, 悬浮窗不单列（2026-09-30 拍板）
 		# 建造厂已合并到上面的图标入口
-		if id == "drone" or id == "corvette" or id == "factory":
+		if id in ["drone", "corvette", "prospector", "barge", "orca", "hulk", "factory"]:
 			continue
 		grid.add_child(_make_module_button(id))
 

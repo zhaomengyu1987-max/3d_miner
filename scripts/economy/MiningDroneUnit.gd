@@ -1,8 +1,11 @@
 class_name MiningDroneUnit
 extends Node3D
 
+# Legacy distances converted to metres; timing and angles are unchanged.
+const U := preload("res://scripts/WorldUnits.gd").LEGACY_TO_METERS
+
 ## 采矿无人机单位（StationModules 按 module_count 生成，模型 drone.glb）。
-## 状态机：IDLE 泊位悬停 → TO_ORE 飞向未被认领的 S 档矿 → 到达即拖曳
+## 状态机：IDLE 泊位悬停 → TO_ORE 飞向未被认领的普矿/燃料冰矿 S 档矿 → 到达即拖曳
 ## （ore.start_capture 自动飞站，BeltFlow 送达钩子统一入账）→ 护送至入库。
 ## 2026-09-30 拍板：拖拽速度 = 玩家拖拽速度的 1/5（按 m/s 移动）；
 ## 矿拖回空间站后无冷却立即出发下一趟；无目标才回泊位。
@@ -10,7 +13,7 @@ extends Node3D
 enum State { IDLE, TO_ORE, ESCORT, RETURN }
 
 const DroneScene := preload("res://sences/MiningDrone.tscn")
-const DRONE_SIZE := 4.5                       # 目标最大边(米) [2026-10-03 拍板: ×5]
+const DRONE_SIZE := 0.45 * U # 目标最大边54m，随原有世界整体放大。
 const HULL_COLOR := Color(0.5, 0.62, 0.66)    # 无材质低模的机壳色
 const DEBUG_SCALE := 50.0                     # debug_instant 时速度×50（headless 测试）
 const RETRY_S := 1.0                          # 池内暂无目标时的重试间隔
@@ -20,9 +23,12 @@ var station: Node3D
 var park_pos := Vector3.ZERO                  # 世界坐标停泊位
 var claims: Array                             # 与其他无人机共享的认领目标列表
 
+const Motion := preload("res://scripts/ships/ShipMotion.gd")
+var motion := Motion.new()
+
 var _state := State.IDLE
 var _retry := 0.0
-var _hover_t := 0.0
+var _target_generation := -1
 var _target: BeltOre
 var _visual: Node3D
 
@@ -33,6 +39,7 @@ func _ready() -> void:
 	var max_dim := _mesh_max_dim_of(_visual)
 	if max_dim > 0.001:
 		_visual.scale = Vector3.ONE * (DRONE_SIZE / max_dim)
+	_visual.rotation.y = PI / 2.0 # Authored +Z bow -> common +X.
 	_apply_hull_material(_visual)
 	position = park_pos
 
@@ -42,13 +49,17 @@ func _speed() -> float:
 	return s * DEBUG_SCALE if Economy.debug_instant else s
 
 
+func configure_motion() -> void:
+	motion.max_speed = _speed()
+	motion.acceleration = _speed() * (50.0 if Economy.debug_instant else 1.5)
+	motion.turn_rate = 7200.0 if Economy.debug_instant else 100.0
+
+
 func _process(delta: float) -> void:
-	_hover_t += delta
-	if _visual != null:
-		_visual.rotation.y += delta * 0.6
+	configure_motion()
 	match _state:
 		State.IDLE:
-			position = park_pos + Vector3(0.0, sin(_hover_t * 2.0) * 0.12, 0.0)
+			motion.travel(self, park_pos, delta)
 			_retry -= delta
 			if _retry <= 0.0:
 				_try_acquire()
@@ -58,37 +69,33 @@ func _process(delta: float) -> void:
 				_go_home()
 				return
 			var d := _target.global_position - global_position
-			if d.length() <= 0.6:
+			if d.length() <= 0.6 * U:
 				_tow()
 			else:
-				global_position += d.normalized() * _speed() * delta
-				look_at(_target.global_position, Vector3.UP)
+				motion.travel(self, _target.global_position, delta)
 		State.ESCORT:
 			# 贴着被拖矿飞, 直到 BeltFlow 送达回收(矿消失) → 无冷却立即下一趟
-			if _target == null or not is_instance_valid(_target) or not _target.visible:
+			if _target == null or not is_instance_valid(_target) or not _target.visible or _target.generation != _target_generation:
 				_forget_target()
 				_try_immediate()
 			elif is_instance_valid(_target) and station != null and is_instance_valid(station):
 				# 平滑护航: 锚点=拖拽线侧后方, 距离随矿+舰尺寸自适应(防扎进被拖矿)
 				var tow_dir := (station.global_position - _target.global_position).normalized()
-				var anchor := _target.global_position - tow_dir * (_target.body_radius() + DRONE_SIZE * 0.5 + 0.3) + Vector3(0.0, 0.6, 0.0)
-				global_position = global_position.move_toward(anchor, _speed() * 3.0 * delta)
-				look_at(_target.global_position, Vector3.UP)
+				var anchor := _target.global_position - tow_dir * (_target.body_radius() + DRONE_SIZE * 0.5 + 0.3 * U) + Vector3(0.0, 0.6, 0.0) * U
+				motion.max_speed = _speed() * 3.0
+				motion.travel(self, anchor, delta)
 		State.RETURN:
-			var home := park_pos - global_position
-			if home.length() <= 0.2:
+			if motion.travel(self, park_pos, delta):
 				_state = State.IDLE
 				_retry = RETRY_S
-				position = park_pos
-			else:
-				global_position += home.normalized() * _speed() * delta
+
 
 
 func _try_acquire() -> void:
 	if belt == null or not is_instance_valid(belt):
 		_retry = RETRY_S
 		return
-	var target := belt.get_free_ore("S", claims)
+	var target := belt.get_free_ore("S", claims, true)
 	if target == null:
 		if _state == State.IDLE:
 			_retry = RETRY_S
@@ -97,17 +104,19 @@ func _try_acquire() -> void:
 		return
 	claims.append(target)
 	_target = target
+	_target_generation = target.generation
 	_state = State.TO_ORE
 
 
 ## 送达后无冷却直接出发（不回泊位）
 func _try_immediate() -> void:
-	var target: BeltOre = belt.get_free_ore("S", claims) \
+	var target: BeltOre = belt.get_free_ore("S", claims, true) \
 		if belt != null and is_instance_valid(belt) else null
 	if target == null:
 		_go_home()
 		return
 	_target = target
+	_target_generation = target.generation
 	claims.append(target)
 	_state = State.TO_ORE
 
@@ -144,7 +153,8 @@ func _tow() -> void:
 ## 目标仍可拖: 存活、可见、没被玩家先手捕获
 func _target_valid() -> bool:
 	return _target != null and is_instance_valid(_target) \
-		and _target.visible and not _target.captured
+		and _target.visible and not _target.captured and _target.generation == _target_generation \
+		and belt != null and belt.drone_can_capture(_target)
 
 
 func _forget_target() -> void:

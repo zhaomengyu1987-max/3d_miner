@@ -5,4 +5,4 @@
 [node name="MiningHub" type="Node3D" unique_id=497343975]
 
 [node name="athanor" parent="." unique_id=1282751917 instance=ExtResource("1_0o1uk")]
-transform = Transform3D(0.1, 0, 0, 0, 0.1, 0, 0, 0, 0.1, -1.310475, 0, 1.5530918)
+transform = Transform3D(12, 0, 0, 0, 12, 0, 0, 0, 12, -157.257, 0, 186.371016)

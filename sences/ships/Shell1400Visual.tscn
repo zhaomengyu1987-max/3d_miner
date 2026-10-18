@@ -1,0 +1,26 @@
+[gd_scene format=3]
+
+[ext_resource type="Texture2D" path="res://assets/fx/cannon1400/1400Round.png" id="2_tex"]
+
+[sub_resource type="StandardMaterial3D" id="Mat_card"]
+transparency = 1
+shading_mode = 0
+albedo_texture = ExtResource("2_tex")
+cull_mode = 2
+
+[sub_resource type="QuadMesh" id="QuadMesh_card"]
+size = Vector2(12, 3.1)
+
+[node name="Shell1400" type="Node3D"]
+
+[node name="CardA" type="MeshInstance3D" parent="."]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 0, 0)
+mesh = SubResource("QuadMesh_card")
+surface_material_override/0 = SubResource("Mat_card")
+cast_shadow = 0
+
+[node name="CardB" type="MeshInstance3D" parent="."]
+transform = Transform3D(-1, 0, 0, 0, 0, -1, 0, 1, 0, 0, 0, 0)
+mesh = SubResource("QuadMesh_card")
+surface_material_override/0 = SubResource("Mat_card")
+cast_shadow = 0

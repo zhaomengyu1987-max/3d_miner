@@ -2,6 +2,9 @@
 class_name BeltFlow
 extends Node3D
 
+# Legacy distances converted to metres; timing and angles are unchanged.
+const U := preload("res://scripts/WorldUnits.gd").LEGACY_TO_METERS
+
 ## 可玩矿石层: 生成区出生 → 沿流向漂移 → 进入消失区回收(对象池循环)
 ## 编辑器内: 显示橙/红调试框; 运行时: 池化生成 BeltOre
 ## 矿种/权重/模型路径由 scripts/economy/GameData.gd 统一定义(制造系统数据表)
@@ -9,37 +12,37 @@ extends Node3D
 # superbigGold 不进流动矿池: 超大金矿, 预留给碎裂效果演示
 const TIER_AMOUNT := {"S": 100, "M": 500, "L": 2500, "XL": 5000}
 ## 这些矿种永远渲染为小尺寸(档位/储量照常掷骰)
-const ALWAYS_SMALL := ["goldSmall", "BlueGem"]
+const ALWAYS_SMALL := ["goldSmall", "goldSmallRed", "BlueGem"]
 ## 牵引特写小窗(PiP)脚本; 运行时 _start_flow 创建, 捕获时绑定目标
 const CloseupCam := preload("res://scripts/TowCloseupCam.gd")
 
 @export_group("生成区")
-@export var spawn_center := Vector3(-100, 0, 0):
+@export var spawn_center := Vector3(-100, 0, 0) * U:
 	set(v):
 		spawn_center = v
 		_update_debug()
-@export var spawn_size := Vector3(10, 12, 60):
+@export var spawn_size := Vector3(10, 12, 60) * U:
 	set(v):
-		spawn_size = Vector3(maxf(v.x, 0.5), maxf(v.y, 0.5), maxf(v.z, 0.5))
+		spawn_size = Vector3(maxf(v.x, 0.5 * U), maxf(v.y, 0.5 * U), maxf(v.z, 0.5 * U))
 		_update_debug()
 
 @export_group("消失区")
-@export var despawn_center := Vector3(60, 0, 0):
+@export var despawn_center := Vector3(60, 0, 0) * U:
 	set(v):
 		despawn_center = v
 		_update_debug()
-@export var despawn_size := Vector3(10, 12, 60):
+@export var despawn_size := Vector3(10, 12, 60) * U:
 	set(v):
-		despawn_size = Vector3(maxf(v.x, 0.5), maxf(v.y, 0.5), maxf(v.z, 0.5))
+		despawn_size = Vector3(maxf(v.x, 0.5 * U), maxf(v.y, 0.5 * U), maxf(v.z, 0.5 * U))
 		_update_debug()
 
 @export_group("流动")
 @export var flow_direction := Vector3(1, 0, 0):
 	set(v):
 		flow_direction = v.normalized() if v.length_squared() > 0.001 else Vector3(1, 0, 0)
-@export var flow_speed := 4.0
+@export var flow_speed := 4.0 * U
 ## 每颗速度 = flow_speed ± speed_variance (绝对值 m/s), 下限 0.05 防反向
-@export var speed_variance := 0.25
+@export var speed_variance := 0.25 * U
 @export var target_count := 40
 ## 单颗矿最长存活(秒): 保险丝, 防任何意外滞留的矿占死池子
 @export var max_ore_age_s := 600.0
@@ -47,18 +50,18 @@ const CloseupCam := preload("res://scripts/TowCloseupCam.gd")
 
 @export_group("矿石尺寸(按档位)")
 ## 各档位目标世界尺寸(米, 取矿石最大边); 模型原始大小差异已自动归一化
-@export var tier_size_s := 0.8:
+@export var tier_size_s := 0.8 * U:
 	set(v):
-		tier_size_s = maxf(v, 0.05)
-@export var tier_size_m := 1.6:
+		tier_size_s = maxf(v, 0.05 * U)
+@export var tier_size_m := 1.6 * U:
 	set(v):
-		tier_size_m = maxf(v, 0.05)
-@export var tier_size_l := 3.0:
+		tier_size_m = maxf(v, 0.05 * U)
+@export var tier_size_l := 3.0 * U:
 	set(v):
-		tier_size_l = maxf(v, 0.05)
-@export var tier_size_xl := 5.5:
+		tier_size_l = maxf(v, 0.05 * U)
+@export var tier_size_xl := 5.5 * U:
 	set(v):
-		tier_size_xl = maxf(v, 0.05)
+		tier_size_xl = maxf(v, 0.05 * U)
 ## 同档位个体大小差异(±比例)
 @export var size_jitter := 0.15:
 	set(v):
@@ -86,16 +89,16 @@ const CloseupCam := preload("res://scripts/TowCloseupCam.gd")
 
 @export_group("引力捕获(初级)")
 ## 弹开后偏出走廊的矿: 超出上/下边带高度即回收
-@export var despawn_band_up := 25.0
-@export var despawn_band_down := 25.0
+@export var despawn_band_up := 25.0 * U
+@export var despawn_band_down := 25.0 * U
 ## 全域兜底: 离带中心超过该半径(米)的任何方向失踪矿直接回收
-@export var despawn_stray_radius := 250.0
+@export var despawn_stray_radius := 250.0 * U
 
 @export_group("引力捕获(初级)")
 @export var capture_enabled := true
 ## 空间站节点; 留空则自动找场景里名为 MiningHub 的节点
 @export var station_path: NodePath
-@export var beam_muzzle_offset := Vector3(0, 0, 0)
+@export var beam_muzzle_offset := Vector3(0, 0, 0) * U
 ## 捕获飞行时长区间(秒): 按捕获瞬间距离自动折算速度, 与设计文档"吸附7~8秒"口径一致
 @export var capture_duration_min := 5.0:
 	set(v):
@@ -114,19 +117,19 @@ const CloseupCam := preload("res://scripts/TowCloseupCam.gd")
 		spin_recover_max = maxf(v, 0.1)
 @export var beam_color := Color(0.55, 0.75, 1.0)
 ## 矿到空间站该距离内算送达(回收)
-@export var capture_reach := 3.0
+@export var capture_reach := 3.0 * U
 
 @export_group("空间站避让")
 ## 站体清空半径: 0=自动(运行时从站体网格AABB推算), >0=手动覆盖(米)
-@export var station_clear_radius := 0.0:
+@export var station_clear_radius := 0.0 * U:
 	set(v):
 		station_clear_radius = maxf(v, 0.0)
 ## 自动半径的贴边系数: 站体半径×(1+系数); 0.2 = 矿可贴到站壳 20% 距离处
 @export var station_clear_margin := 0.2
 ## 避让推力强度(越大绕得越急)
-@export var station_push := 2.5:
+@export var station_push := 2.5 * U:
 	set(v):
-		station_push = maxf(v, 0.1)
+		station_push = maxf(v, 0.1 * U)
 
 @export_group("调试")
 @export var show_debug_zones := true:
@@ -149,7 +152,11 @@ var _started := false
 var _station: Node3D
 var _beam_fx: GravityBeamFX
 var _beam_ids := {}
-var _clear_radius := 8.0  # 实际生效的避让半径(自动测量或手动覆盖)
+var _fractures := {}
+const FRACTURE_HOT_HOLD := 1.5
+const FRACTURE_HEATING_MULTIPLIER := 2.0
+const FractureFX := preload("res://scripts/fx/FractureImpactFX.gd")
+var _clear_radius := 8.0 * U # 实际生效的避让半径(自动测量或手动覆盖)
 var _dbg_accum2 := 0.0
 var _closeup  # TowCloseupCam (CanvasLayer), 运行时创建
 
@@ -170,10 +177,23 @@ func _process(delta: float) -> void:
 	var fd := flow_direction
 	var despawn_edge: float = despawn_center.dot(fd) 		+ 0.5 * (absf(fd.x) * despawn_size.x + absf(fd.y) * despawn_size.y + absf(fd.z) * despawn_size.z)
 	var active := 0
+	var completed: Array[BeltOre] = []
 	for ore in _pool:
 		if not ore.visible:
 			continue
 		active += 1
+		if _fractures.has(ore):
+			if muzzle == null:
+				_cancel_fracture(ore)
+				continue
+			_fractures[ore].left -= delta
+			var heating_time := float(_fractures[ore].heating_time)
+			var progress := 1.0 - maxf(0.0, float(_fractures[ore].left) - FRACTURE_HOT_HOLD) / heating_time
+			var toward_source := (_station.global_position - ore.global_position).normalized()
+			ore.heat_surface(ore.global_position + toward_source * ore.body_radius() * 0.65, progress)
+			if float(_fractures[ore].left) <= 0.0:
+				completed.append(ore)
+			continue
 		if ore.captured:
 			# 送达判定 → 入经济库存(制造系统)
 			if muzzle != null and ore.global_position.distance_to(muzzle) <= capture_reach:
@@ -193,10 +213,20 @@ func _process(delta: float) -> void:
 				# 软避让 v2: 注入径向逃逸速度(旧版直接改坐标与求解器打架, 矿黏站)
 				var off := ore.global_position - station_pos
 				var d := off.length()
-				if d < _clear_radius and d > 0.01:
+				if d < _clear_radius and d > 0.01 * U:
 					var strength := (_clear_radius - d) / _clear_radius
 					ore.linear_velocity += off.normalized() * strength * station_push * 10.0 * delta
-	if active < target_count:
+	for ore in completed:
+		_complete_fracture(ore)
+	# Split fragments may temporarily exceed normal belt density. Reclaim only hidden extras.
+	for i in range(_pool.size() - 1, -1, -1):
+		if _pool.size() <= target_count:
+			break
+		if not _pool[i].visible:
+			var unused := _pool[i]
+			_pool.remove_at(i)
+			unused.queue_free()
+	if completed.is_empty() and active < target_count:
 		_spawn_one()
 	# 诊断 v2: 贴站矿专项(每3s: 最近站距/最远X进度) —— 仅 debug_monitor 打开时统计并打印
 	if debug_monitor:
@@ -240,6 +270,9 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _release_all() -> void:
 	for ore in _pool:
+		if _fractures.has(ore):
+			_cancel_fracture(ore)
+			continue
 		# 无人机拖曳的矿不归玩家松手管
 		if ore.captured and not ore.auto_towed:
 			_kill_beam(ore)
@@ -257,10 +290,10 @@ func _try_capture() -> void:
 	var dir := cam.project_ray_normal(mouse)
 	var best: BeltOre = null
 	var best_t := INF
-	var radius := tier_size_s * 0.5 + 0.6
 	for ore in _pool:
-		if not ore.visible or ore.captured or ore.tier != "S":
+		if not ore.visible or ore.captured or ore.tier not in ["S", "M", "L"]:
 			continue
+		var radius := ore.body_radius() + 0.6 * U
 		var to_ore := ore.global_position - origin
 		var t := to_ore.dot(dir)
 		if t <= 0.0:
@@ -274,16 +307,105 @@ func _try_capture() -> void:
 
 
 func _capture(ore: BeltOre) -> void:
+	if not is_instance_valid(ore) or not ore.visible or ore.captured or ore.tier not in ["S", "M", "L"]:
+		return
 	var muzzle: Variant = _muzzle_pos()
 	if muzzle == null:
 		return
 	var dist: float = (ore.global_position - muzzle).length()
 	var duration := _rng.randf_range(capture_duration_min, capture_duration_max)
 	ore.start_capture(_station, dist / maxf(duration, 0.1), capture_spin_speed)
+	if ore.tier in ["M", "L"]:
+		ore.fracturing = true
+		ore.spin_speed = ore._spin_saved
+		ore.angular_velocity = ore.spin_axis * ore.spin_speed
+		var fx := FractureFX.new()
+		add_child(fx)
+		var color := Color(1.0, 0.72, 0.05, 1.0) # Yellow impact/sparks; tractor beam stays blue.
+		fx.configure(ore, _station, color, ore.body_radius())
+		var heating_time := duration * FRACTURE_HEATING_MULTIPLIER
+		_fractures[ore] = {"left": heating_time + FRACTURE_HOT_HOLD, "heating_time": heating_time, "fx": fx}
+		var hit := ore.global_position + (_station.global_position - ore.global_position).normalized() * ore.body_radius() * 0.65
+		ore.heat_surface(hit, 0.0)
 	if _beam_fx:
 		_beam_ids[ore] = _beam_fx.spawn(_station, ore)
 	if _closeup:
 		_closeup.set_target(ore, _tier_size(ore.tier) * 0.5)
+
+
+func drone_can_capture(ore: BeltOre) -> bool:
+	if not is_instance_valid(ore) or not ore.visible or ore.captured or ore.tier != "S":
+		return false
+	var id := GameData.asset_to_ore(ore.ore_name)
+	return id.begins_with("common") or id == GameData.FUEL_ID
+
+
+func _cancel_fracture(ore: BeltOre) -> void:
+	if not _fractures.has(ore):
+		return
+	var fx: Node = _fractures[ore].fx
+	if is_instance_valid(fx):
+		fx.queue_free()
+	_fractures.erase(ore)
+	_kill_beam(ore)
+	ore.stop_capture()
+	ore.set_drifting(true)
+	ore.start_cooling()
+
+
+func _fragment_asset(parent_asset: String) -> String:
+	if _rng.randf() >= 0.1:
+		return parent_asset
+	var total := 0.0
+	for id in GameData.RARE_IDS:
+		if _meshes.has(GameData.ORES[id].asset):
+			total += float(GameData.ORES[id].weight)
+	var roll := _rng.randf() * total
+	for id in GameData.RARE_IDS:
+		var row: Dictionary = GameData.ORES[id]
+		if not _meshes.has(row.asset):
+			continue
+		roll -= float(row.weight)
+		if roll <= 0.0:
+			return row.asset
+	return parent_asset
+
+
+func _complete_fracture(ore: BeltOre) -> void:
+	if not _fractures.has(ore):
+		return
+	var center := ore.global_position
+	var parent_asset := ore.ore_name
+	var parent_tier := ore.tier
+	var drift := ore.velocity
+	var fx = _fractures[ore].fx
+	if is_instance_valid(fx):
+		fx.finish()
+	_fractures.erase(ore)
+	_kill_beam(ore)
+	ore.set_drifting(false)
+	var tiers: Array = ["M", "S", "S", "S"] if parent_tier == "L" else ["S", "S", "S"]
+	var spread := _tier_size("M") if parent_tier == "L" else _tier_size("S")
+	for i in tiers.size():
+		var asset := _fragment_asset(parent_asset) if tiers[i] == "S" else parent_asset
+		var child: BeltOre = null
+		for candidate in _pool:
+			if not candidate.visible:
+				child = candidate
+				break
+		if child == null:
+			child = BeltOre.new()
+			add_child(child)
+			_pool.append(child)
+		var size := _tier_size(tiers[i])
+		if asset in ALWAYS_SMALL:
+			size = tier_size_s
+		var angle := float(i) * TAU / float(tiers.size())
+		child.global_position = center + Vector3(cos(angle), 0.0, sin(angle)) * spread
+		child.setup(asset, _meshes[asset], tiers[i], TIER_AMOUNT[tiers[i]], drift,
+			size / float(_mesh_max_dim[asset]), size * 0.5, spin_speed_min, spin_speed_max)
+		child.set_drifting(true)
+		child.start_cooling(true)
 
 
 func _kill_beam(ore: BeltOre) -> void:
@@ -300,7 +422,7 @@ func _measure_station_radius() -> void:
 		_clear_radius = station_clear_radius
 		print("BeltFlow: 站体避让半径(手动) = %.1f m" % _clear_radius)
 		return
-	_clear_radius = 8.0
+	_clear_radius = 8.0 * U
 	var hub := _station
 	if hub == null or not is_instance_valid(hub):
 		return
@@ -322,13 +444,13 @@ func _measure_station_radius() -> void:
 			best = maxf(best, 0.5 * maxf(sz.x, maxf(sz.y, sz.z)))
 		for c in n.get_children():
 			stack.append(c)
-	if best > 0.5:
+	if best > 0.5 * U:
 		_clear_radius = best * (1.0 + station_clear_margin)
 	print("BeltFlow: 站体避让半径(自动) = %.1f m (站体半宽 %.1f)" % [_clear_radius, best])
 
 
 func _start_flow() -> void:
-	_rng.seed = hash(name) + int(global_position.x)
+	_rng.seed = hash(name) + int(global_position.x / U)
 	for c in get_children():
 		if c.name.begins_with("DEBUG_"):
 			c.free()
@@ -385,7 +507,7 @@ func _spawn_one(prefill := false) -> void:
 		var tier := _pick_tier()
 		if GameData.ore_s_only(ore_name):
 			tier = "S"  # 模型细节撑不起大体积的矿锁死 S 档(GameData.ORES s_only 字段)
-		var speed := maxf(flow_speed + _rng.randf_range(-speed_variance, speed_variance), 0.05)
+		var speed := maxf(flow_speed + _rng.randf_range(-speed_variance, speed_variance), 0.05 * U)
 		# 流向转到世界空间: 节点被挪动/旋转后矿流跟随节点朝向
 		var dir_world := global_transform.basis * flow_direction
 		dir_world = dir_world.normalized() if dir_world.length_squared() > 0.001 else Vector3(1, 0, 0)
@@ -432,13 +554,15 @@ func get_free_ore_biggest(claimed: Array) -> BeltOre:
 	return best
 
 
-func get_free_ore(tier: String, claimed: Array) -> BeltOre:
+func get_free_ore(tier: String, claimed: Array, drone_only := false) -> BeltOre:
 	var best: BeltOre = null
 	var best_d := INF
 	var ref: Variant = _muzzle_pos()
 	var ref_pos: Vector3 = ref if ref != null else global_position
 	for ore in _pool:
 		if not ore.visible or ore.captured or ore.tier != tier:
+			continue
+		if drone_only and not drone_can_capture(ore):
 			continue
 		if ore in claimed:
 			continue
@@ -495,7 +619,7 @@ func _load_meshes() -> void:
 		var def: Dictionary = GameData.ORES[ore_id]
 		var path: String = def["path"]
 		if path == "":
-			continue  # 模型未做(如稀有矿D), 不进矿池
+			continue  # 模型未做，不进矿池
 		if not ResourceLoader.exists(path):
 			push_warning("BeltFlow: 缺少 %s" % path)
 			continue
@@ -506,12 +630,34 @@ func _load_meshes() -> void:
 		var mesh := _first_mesh(inst)
 		inst.free()
 		if mesh != null:
+			if def.has("hue_shift"):
+				mesh = _hue_variant(mesh, float(def["hue_shift"]))
 			_meshes[def["asset"]] = mesh
 			var aabb := mesh.get_aabb()
 			var md := maxf(aabb.size.x, maxf(aabb.size.y, aabb.size.z))
 			_mesh_max_dim[def["asset"]] = maxf(md, 0.001)
 	if _meshes.is_empty():
 		push_warning("BeltFlow: 没有可用矿石 mesh")
+
+
+## Isolated mesh/material variant; never recolor the shared imported gold mesh.
+## This asset uses glTF's packed metallic(B)/roughness(G) texture, no normal map.
+func _hue_variant(source: Mesh, shift: float) -> Mesh:
+	var result := source.duplicate() as Mesh
+	for surface in result.get_surface_count():
+		var original := source.surface_get_material(surface) as StandardMaterial3D
+		if original == null:
+			continue
+		var material := ShaderMaterial.new()
+		material.shader = preload("res://shaders/ore_hue.gdshader")
+		material.set_shader_parameter("albedo_texture", original.albedo_texture)
+		material.set_shader_parameter("orm_texture", original.metallic_texture)
+		material.set_shader_parameter("base_color", original.albedo_color)
+		material.set_shader_parameter("metallic_factor", original.metallic)
+		material.set_shader_parameter("roughness_factor", original.roughness)
+		material.set_shader_parameter("hue_shift", shift)
+		result.surface_set_material(surface, material)
+	return result
 
 
 func _first_mesh(n: Node) -> Mesh:

@@ -1,0 +1,19 @@
+[gd_resource type="ShaderMaterial" format=3]
+
+[ext_resource type="Shader" path="res://assets/fx/engine/mainfire.gdshader" id="1"]
+[ext_resource type="Texture2D" path="res://assets/fx/engine/flow_noise.tres" id="2"]
+
+[resource]
+resource_local_to_scene = true
+render_priority = 0
+shader = ExtResource("1")
+shader_parameter/flow_noise = ExtResource("2")
+shader_parameter/flow_speed = 5.0
+shader_parameter/swirl_speed = 0.35
+shader_parameter/edge_threshold = 0.48
+shader_parameter/edge_softness = 0.16
+shader_parameter/brightness = 4.5
+shader_parameter/drive = 1.0
+shader_parameter/layer_override = 0.5
+shader_parameter/ring_surface = true
+shader_parameter/opacity_multiplier = 0.15

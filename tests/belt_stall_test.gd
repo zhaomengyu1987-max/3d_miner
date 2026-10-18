@@ -1,4 +1,7 @@
 extends Node
+
+# Legacy distances converted to metres; timing and angles are unchanged.
+const U := preload("res://scripts/WorldUnits.gd").LEGACY_TO_METERS
 ## BeltFlow 长跑"矿石断流"回归测试（无头）
 ##
 ## 现象：矿石流跑一段时间后不再出现新矿。
@@ -30,8 +33,8 @@ const TimeWarpScript := preload("res://scripts/dev/TimeWarp.gd")
 const WARP := 10.0              ## 加速系统倍率（10×）
 const COUNT := 60               ## 池容量（游戏 400；数量不影响结构复现）
 const FUSE_S := 20.0            ## max_ore_age_s（游戏 600s）
-const FLOW_SPEED := 8.0         ## 游戏 0.77 m/s
-const SPEED_VARIANCE := 0.5
+const FLOW_SPEED := 8.0 * U ## 游戏 0.77 m/s
+const SPEED_VARIANCE := 0.5 * U
 const WARMUP_S := 60.0          ## 预热：等所有槽位都跑满 1 趟以上（报废发生在第 1~2 趟末）
 const RUN_SIM_S := 100.0
 const SAMPLE_S := 5.0
@@ -54,7 +57,7 @@ func _ready() -> void:
 func _run() -> void:
 	print("=== BeltFlow 长跑断流测试 ===")
 	print("参数: target_count=%d  max_ore_age_s=%.0fs  flow_speed=%.2f  加速=%.0f×  (单趟≈%.1fs)"
-		% [COUNT, FUSE_S, FLOW_SPEED, WARP, 165.0 / FLOW_SPEED])
+		% [COUNT, FUSE_S, FLOW_SPEED, WARP, 165.0 * U / FLOW_SPEED])
 
 	_warp = TimeWarpScript.new()
 	_warp.name = "TimeWarp"
@@ -147,7 +150,7 @@ func _stats() -> Dictionary:
 	var progressed := 0
 	var age_min := INF
 	var age_max := -INF
-	var x_start: float = _flow.spawn_center.x + 30.0
+	var x_start: float = _flow.spawn_center.x + 30.0 * U
 	for ore in _flow._pool:
 		if not ore.visible:
 			continue
