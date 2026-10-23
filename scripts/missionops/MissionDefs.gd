@@ -9,6 +9,14 @@ const DIFF_BASE := {"D1": 0.85, "D2": 0.75, "D3": 0.65, "D4": 0.50}
 
 # ── 任务表(§8: 12 条;时长/奖励 [占位]) ──
 const TASKS := {
+	"mo_empire_patrol": {"name": "帝国委派·边境巡查", "kind": "combat", "diff": "D1", "dur_sec": 480.0,
+		"ships": 2, "spec": "combat", "risk": 0.0, "ep": 6, "credits": 750,
+		"desc": "协助帝国巡查争议星系。成功增加联盟怀疑 25 点，授予帝国反应装甲蓝图。",
+		"equip_req": {"weapon": 1}, "faction_id": "empire", "blueprint_reward": "empireReactiveArmor"},
+	"mo_alliance_patrol": {"name": "联盟委派·航线守望", "kind": "escort", "diff": "D1", "dur_sec": 480.0,
+		"ships": 2, "spec": "escort", "risk": 0.0, "ep": 6, "credits": 750,
+		"desc": "协助联盟巡查争议星系。成功增加帝国怀疑 25 点，授予联盟偏转矩阵蓝图。",
+		"equip_req": {"defense": 1}, "faction_id": "southern", "blueprint_reward": "allianceShieldMatrix"},
 	"mo_survey_ice": {
 		"name": "冰带深处勘测", "kind": "survey", "diff": "D1", "dur_sec": 300.0,
 		"ships": 2, "spec": "survey", "risk": 0.0,
@@ -26,6 +34,7 @@ const TASKS := {
 		"ships": 2, "spec": "combat", "risk": 0.0,
 		"ep": 6, "credits": 700, "desc": "清剿航道散匪,保障委托方航线。",
 		"equip_req": {"weapon": 1},
+		"route_safety_gain": 0.5,
 	},
 	"mo_salvage_field": {
 		"name": "残骸场打捞", "kind": "salvage", "diff": "D1", "dur_sec": 600.0,
@@ -56,6 +65,7 @@ const TASKS := {
 		"ships": 3, "spec": "combat", "risk": 0.10,
 		"ep": 25, "credits": 1800, "desc": "摧毁海盗窝点,清剿有生力量。",
 		"equip_req": {"weapon": 1},
+		"route_safety_gain": 1.5,
 	},
 	"mo_survey_deep": {
 		"name": "深空星域测绘", "kind": "survey", "diff": "D3", "dur_sec": 1500.0,
@@ -81,11 +91,24 @@ const TASKS := {
 		"ep": 50, "credits": 2500, "desc": "解密异常信标阵列,获取深空数据。",
 		"equip_req": {"elec": 2},
 	},
+	"mo_patrol_lane": {
+		"name": "航道巡逻", "kind": "combat", "diff": "D1", "dur_sec": 420.0,
+		"ships": 2, "spec": "combat", "risk": 0.0,
+		"ep": 5, "credits": 400, "desc": "巡查空间站附近航道,驱离可疑舰船。",
+		"equip_req": {"weapon": 1}, "route_safety_gain": 0.3,
+	},
+	"mo_escort_convoy": {
+		"name": "商队护航", "kind": "escort", "diff": "D2", "dur_sec": 900.0,
+		"ships": 2, "spec": "escort", "risk": 0.05,
+		"ep": 12, "credits": 1000, "desc": "护送来往商队穿越航道,保障空间站补给线。",
+		"equip_req": {"defense": 1}, "route_safety_gain": 0.7,
+	},
 }
 
 # ── 三层任务板(§5.8) ──
 const RESIDENT_TASKS := ["mo_survey_ice", "mo_combat_skirmish", "mo_salvage_field",
-	"mo_escort_probe", "mo_signal_faint"]
+	"mo_empire_patrol", "mo_alliance_patrol",
+	"mo_escort_probe", "mo_signal_faint", "mo_patrol_lane", "mo_escort_convoy"]
 const ROTATION_POOL := ["mo_survey_rock", "mo_salvage_hulk", "mo_combat_nest",
 	"mo_survey_deep", "mo_escort_science", "mo_salvage_wreck", "mo_signal_grid"]
 const ROTATION_SLOTS := 3

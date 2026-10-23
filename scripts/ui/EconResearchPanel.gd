@@ -67,7 +67,7 @@ func _rebuild() -> void:
 
 	# ---- 设备研究行 ----
 	body.add_child(_section("设备研究"))
-	for equip in GameData.equip_ids():
+	for equip in GameData.licensed_equip_ids():
 		body.add_child(_equip_row(equip))
 
 	# ---- T2 占位（§4.4：暂不设计） ----

@@ -73,6 +73,7 @@ func _ready() -> void:
 	_build()
 	MissionOps.mission_completed.connect(_on_mission_done)
 	MissionOps.board_refreshed.connect(_refresh_all)
+	WorldState.route_security_changed.connect(_refresh_top)
 
 
 func _unhandled_key_input(event: InputEvent) -> void:
@@ -359,7 +360,7 @@ func _refresh_top() -> void:
 	_ep_lab.text = "EP %d" % MissionOps.ep()
 	var busy: int = MissionOps.active.size()
 	var total: int = MissionOps.teams.size()
-	_fleet_lab.text = "队伍 %d/%d 在途 %d" % [total, MissionOps.fleet_cap(), busy]
+	_fleet_lab.text = "队伍 %d/%d 在途 %d · 航道安全 %.1f/10" % [total, MissionOps.fleet_cap(), busy, WorldState.route_safety]
 
 
 func _refresh_teams() -> void:
@@ -458,6 +459,8 @@ func _refresh_details() -> void:
 	var mat_name: String = MissionDefs.EXP_MATERIALS.get(
 		MissionDefs.drop_material(def.get("kind", "")), {}).get("label", "")
 	_detail_rewards.text = "奖励: EP+%d · ₡%d · %s" % [ep_val, credits, mat_name]
+	if float(def.get("route_safety_gain", 0.0)) > 0.0:
+		_detail_rewards.text += "\n航道安全 +%.1f（上限10）" % float(def.route_safety_gain)
 
 	# 派遣按钮状态
 	var can_dispatch := true
@@ -682,6 +685,10 @@ func _on_mission_done(report: Dictionary) -> void:
 			report.get("task", "?"), int(report.get("ep", 0)), int(report.get("credits", 0))]
 	else:
 		_log_label.text = "[color=#f39058]◆ %s · 失败[/color]" % report.get("task", "?")
+	if report.has("route_safety_gain"):
+		_log_label.text += " · 航道安全+%.1f" % float(report.route_safety_gain)
+	elif report.get("route_safety_pending", false):
+		_log_label.text += " · 航道安全收益待结算"
 	_refresh_all()
 
 

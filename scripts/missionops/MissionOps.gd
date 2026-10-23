@@ -6,7 +6,7 @@ extends Node
 ## 时钟 = 墙钟(§6.1 方案A): 派遣记 started_wall/ends_wall, 到点按 mission seed 掷骰结算;
 ## 离线补算 = 读档后 catch_up(now), 与在线同函数同结果。
 ## 随机 = 每任务独立 seed(存档), 同 seed 重放同结果(§11.8)。
-## 边界(§1): 只调 Economy.add_money / Economy.money; 对 WorldState 零依赖。
+## 航道安全通过可选 WorldState 适配接口结算；待处理结果随本节保存并可重试。
 
 signal mission_completed(report: Dictionary)
 signal captain_state_changed(cid: String, status: String)
@@ -32,6 +32,9 @@ var _cap_seq: int = 0
 var _team_seq: int = 0
 var _mis_seq: int = 0
 var _last_report: Dictionary = {}
+var pending_route_results: Dictionary = {}
+var pending_faction_results: Dictionary = {}
+var _route_retry_at := 0.0
 var _ui: Node = null
 # ── MVP 试玩档 ──
 var trial_mode: bool = false           # 加速模式(时长÷SPEED_DIV)
@@ -84,6 +87,8 @@ func _get_state() -> Dictionary:
 		"inventory": inventory, "board": board,
 		"discoveries": discoveries,
 		"trial_initialized": trial_initialized, "trial_mode": trial_mode,
+		"pending_route_results": pending_route_results,
+		"pending_faction_results": pending_faction_results,
 	}
 
 
@@ -96,6 +101,22 @@ func _apply_state(data: Variant) -> bool:
 	var teams_d: Variant = data.get("teams", null)
 	var active_d: Variant = data.get("active", null)
 	var stats_d: Variant = data.get("stats", null)
+	var route_d: Variant = data.get("pending_route_results", {})
+	var faction_d: Variant = data.get("pending_faction_results", {})
+	if not faction_d is Dictionary: return false
+	for report in faction_d.values():
+		if not report is Dictionary or not report.has_all(["mission_id", "task_id", "seed", "timestamp"]): return false
+		if not MissionDefs.TASKS.has(report.task_id): return false
+	if not route_d is Dictionary:
+		return false
+	for report in route_d.values():
+		if not report is Dictionary or not report.has_all(["mission_id", "task_id", "seed", "timestamp"]):
+			return false
+		if not MissionDefs.TASKS.has(report.task_id):
+			return false
+		if typeof(report.mission_id) != TYPE_STRING or typeof(report.seed) not in [TYPE_INT, TYPE_FLOAT] \
+			or typeof(report.timestamp) not in [TYPE_INT, TYPE_FLOAT]:
+			return false
 	# ── 外层容器 ──
 	if typeof(exploration_d) != TYPE_DICTIONARY or typeof(captains_d) != TYPE_DICTIONARY 			or typeof(pool_a) != TYPE_ARRAY or typeof(teams_d) != TYPE_DICTIONARY 			or typeof(active_d) != TYPE_DICTIONARY or typeof(stats_d) != TYPE_DICTIONARY:
 		push_warning("MissionOps: 存档节外层结构损坏")
@@ -171,6 +192,8 @@ func _apply_state(data: Variant) -> bool:
 	teams = teams_d
 	active = active_d
 	stats = stats_d
+	pending_route_results = route_d
+	pending_faction_results = faction_d
 	pool_refresh_at = float(data.get("pool_refresh_at", 0.0))
 	pool_seed = int(data.get("pool_seed", 0))
 	_cap_seq = int(data.get("cap_seq", 0))
@@ -198,6 +221,8 @@ func _apply_state(data: Variant) -> bool:
 ## 启动补算(deferred): 所有节注册/回放完成后执行一次; 幂等。
 func _startup_catch_up() -> void:
 	_catch_up(_now())
+	_flush_route_results()
+	_flush_faction_results()
 	# 空池补员仅在"从未初始化"时进行(pool_refresh_at<=0 = 新档);
 	# 恢复档的空池等计时到期由 _process 自然刷新(审查 R3-P2)
 	if recruit_pool.is_empty() and pool_refresh_at <= 0.0:
@@ -210,6 +235,10 @@ func _startup_catch_up() -> void:
 # ── 主循环: 到点结算 ──
 func _process(_delta: float) -> void:
 	var now := _now()
+	if (not pending_route_results.is_empty() or not pending_faction_results.is_empty()) and now >= _route_retry_at:
+		_route_retry_at = now + 5.0
+		_flush_route_results()
+		_flush_faction_results()
 	if now >= pool_refresh_at:
 		_refresh_pool()
 	if now >= float(board.get("rotation_at", 0.0)):
@@ -513,12 +542,22 @@ func _resolve(mid: String) -> void:
 	var snap_status: String = captains[cid]["status"] if captains.has(cid) else ""
 	var snap_cap: Dictionary = captains[cid].duplicate() if captains.has(cid) else {}
 	var snap_inv: Dictionary = inventory.duplicate()  # P1-1: inventory 快照(战利品回滚)
+	# The result must share the first durable removal of the mission; otherwise a crash
+	# after removal could permanently lose the faction reward before it enters the outbox.
+	var faction_result_id := _route_result_id(report)
+	var faction_before: Dictionary = pending_faction_results.duplicate(true)
+	var faction_partial := not success and _is_partial(success, roll, p)
+	if String(def.get("faction_id", "")) != "" and (success or faction_partial):
+		var faction_report := report.duplicate(true)
+		faction_report["partial"] = faction_partial
+		pending_faction_results[faction_result_id] = faction_report
 	active.erase(mid)
 	if captains.has(cid):
 		captains[cid]["status"] = "idle"
 		captain_state_changed.emit(cid, "idle")
 	var gs := get_node_or_null("/root/GameSave")
 	if gs and not gs.save_now():
+		pending_faction_results = faction_before
 		active[mid] = mis
 		if captains.has(cid):
 			captains[cid]["status"] = snap_status
@@ -548,6 +587,7 @@ func _resolve(mid: String) -> void:
 			stats["failed"] = snap_failed
 			inventory = snap_inv                    # P1-1: inventory 回滚
 			active[mid] = mis
+			pending_faction_results = faction_before
 			if captains.has(cid):
 				captains[cid] = snap_cap
 				captains[cid]["status"] = snap_status
@@ -562,11 +602,53 @@ func _resolve(mid: String) -> void:
 		stats["failed"] += 1
 		_give_captain_exp(cid, 5)
 	_last_report = report
+	if float(def.get("route_safety_gain", 0.0)) > 0.0 and (success or partial):
+		report["route_safety_pending"] = true
+		pending_route_results[_route_result_id(report)] = report.duplicate(true)
+		_flush_route_results()
 	_set_cooldown(mis["task_id"])   # M2: 常驻任务冷却(§5.8)
+	if pending_faction_results.has(faction_result_id):
+		_flush_faction_results()
 	_maybe_discovery(def, int(mis["seed"]))   # M2: 发现物(§5.7)
 	if gs:
 		gs.touch()
 	mission_completed.emit(report)
+
+
+func _route_result_id(report: Dictionary) -> String:
+	return "%s:%d:%.6f" % [report.get("mission_id", ""), int(report.get("seed", 0)), float(report.get("timestamp", 0))]
+
+
+func _flush_faction_results() -> void:
+	if pending_faction_results.is_empty(): return
+	var gs := get_node_or_null("/root/GameSave")
+	if gs and not gs.save_now(): return
+	for id in pending_faction_results.keys().duplicate():
+		if Economy.diplomacy.apply_mission_result(pending_faction_results[id]):
+			pending_faction_results.erase(id)
+	if gs: gs.touch()
+
+
+func _flush_route_results() -> void:
+	if pending_route_results.is_empty():
+		return
+	var world := get_node_or_null("/root/WorldState")
+	if world == null or not world.has_method("apply_route_mission_result"):
+		return
+	var gs := get_node_or_null("/root/GameSave")
+	# Persist the outbox first. WorldState records the same result ID before acknowledging it.
+	if gs and not gs.save_now():
+		return
+	for id in pending_route_results.keys().duplicate():
+		var result: Dictionary = world.apply_route_mission_result(pending_route_results[id])
+		if not bool(result.get("ok", false)):
+			continue
+		if _route_result_id(_last_report) == id:
+			_last_report["route_safety_gain"] = float(result.get("gain", 0.0))
+			_last_report["route_safety_pending"] = false
+		pending_route_results.erase(id)
+	if gs:
+		gs.touch()
 
 
 func _give_captain_exp(cid: String, amount: int) -> void:
@@ -655,6 +737,9 @@ func reset_state() -> void:
 	_team_seq = 0
 	_mis_seq = 0
 	_last_report = {}
+	pending_route_results.clear()
+	pending_faction_results.clear()
+	_route_retry_at = 0.0
 	fleet = {}
 	ship_name_counter = 0
 	inventory = {}

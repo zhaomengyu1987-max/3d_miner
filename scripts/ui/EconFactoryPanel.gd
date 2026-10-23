@@ -57,7 +57,7 @@ func _rebuild() -> void:
 	body.add_child(head)
 	if factories <= 0:
 		body.add_child(EconTheme.label(
-			"无建造厂：组件可手搓（1 条手工产线）；小型产品与舰船需要先建造厂。", EconTheme.WARN, 12))
+			"初始手工产线：可制造组件、弹药和舰用装备；建造厂可增加产线并提高效率。", EconTheme.WARN, 12))
 	body.add_child(EconTheme.label(
 		"产线满时继续点击制造会自动排队（下单即锁料，取消全额退还）。", EconTheme.DIM, 12))
 
@@ -90,19 +90,17 @@ func _rebuild() -> void:
 	left.add_child(_section("空间站组件（矿石直接制造）"))
 	for id in GameData.COMPONENTS:
 		left.add_child(_equip_row(id))
-	# MVP: 子系统装备独立分区(直接制造,无许可证无蓝图)
-	var equip_ids: Array[String] = []
-	var product_ids: Array[String] = []
-	for id in GameData.PRODUCTS:
-		if GameData.PRODUCTS[id].get("is_equip", false):
-			equip_ids.append(id)
-		else:
-			product_ids.append(id)
+	left.add_child(_section("弹药（初始可造 · 战舰优先收购）"))
+	for id in GameData.product_ids("ammo"):
+		left.add_child(_equip_row(id))
+	left.add_child(_section("舰用装备（常规配方初始可造 · 势力型号需蓝图）"))
+	for id in GameData.product_ids("ship_equipment"):
+		left.add_child(_equip_row(id))
 	left.add_child(_section("子系统装备（探索派遣用·直接制造）"))
-	for id in equip_ids:
+	for id in GameData.product_ids("mission"):
 		left.add_child(_equip_row(id))
 	left.add_child(_section("小型产品（许可证/原图）"))
-	for id in product_ids:
+	for id in GameData.product_ids("general"):
 		left.add_child(_equip_row(id))
 	left.add_child(_section("舰船（纯商品：卖给来访货舰——玩家不操舰）"))
 	for id in GameData.SHIPS:
@@ -161,9 +159,12 @@ func _equip_row(equip: String) -> Control:
 	name_l.custom_minimum_size.x = 240
 	head.add_child(name_l)
 
-	# 许可证状态(仅原有产品显示; is_equip 装备完全无此栏)
-	var is_equip_item: bool = GameData.PRODUCTS.has(equip) and GameData.PRODUCTS[equip].get("is_equip", false)
-	if not GameData.is_component(equip) and not is_equip_item:
+	if GameData.is_open_recipe(equip):
+		head.add_child(EconTheme.label("初始可造 · 无需蓝图", EconTheme.GOOD, 12))
+	elif GameData.recipe_faction(equip) != "":
+		head.add_child(EconTheme.label("势力蓝图已获" if Economy.blueprints.has(equip) else "需势力蓝图 · 生产委托奖励",
+			EconTheme.GOOD if Economy.blueprints.has(equip) else EconTheme.WARN, 12))
+	elif GameData.requires_license(equip):
 		var lic := EconTheme.label(_license_text(equip), _license_color(equip), 12)
 		lic.custom_minimum_size.x = 190
 		head.add_child(lic)

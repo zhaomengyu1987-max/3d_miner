@@ -21,6 +21,7 @@ func _ready() -> void:
 	for id in ["standard", "heavy", "giant"]:
 		var f := Freighter.new()
 		f.def_id = id
+		f.hull_id = {"standard": "frigate", "heavy": "battleship", "giant": "flagship"}[id]
 		f.name = id
 		Economy.berths.append(f)
 		sm._spawn_ship(f)
@@ -30,12 +31,23 @@ func _ready() -> void:
 		check(ship.find_children("Cannon*", "Node3D", true, false).size() > 0, id + " passive 1400 fitted")
 		check(ship.find_children("*Rail*", "", true, false).is_empty(), id + " no rail weapons")
 		check(ship.get_node("VisualBasis/Cannon1").muzzle_markers().size() >= 2, id + " original muzzle markers")
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 9711
+	var industrial := Freighter.make("standard", false, rng, {}, {}, "industrial")
+	Economy.berths.append(industrial)
+	sm._spawn_ship(industrial)
+	var industrial_node: Node3D = sm._ships[industrial]
+	check(industrial_node.has_node("ship") and not industrial_node.has_node("VisualBasis"), "standard tier can use actual industrial model")
+	check(industrial_node.get_node("ship").scene_file_path == "res://assets/models/ship/industrial1.glb", "industrial visitor loads industrial asset")
+	check(industrial_node.find_children("Cannon*", "Node3D", true, false).is_empty(), "industrial visitor has no battleship weapons")
+	var industrial_labels := industrial_node.find_children("*", "Label3D", false, false)
+	check(industrial_labels.size() == 1 and industrial_labels[0].text == industrial.name, "industrial model and label match")
 	for i in 2400:
 		sm._process_ships(1.0 / 60.0)
 	for f in Economy.berths.duplicate():
 		var ship: Node3D = sm._ships[f]
 		check(ship.get_meta("state") == "docked", f.def_id + " arrives and brakes")
-		check(ship.motion.velocity.length() < 0.01, f.def_id + " docked at rest")
+		check(ship.get_meta("motion").velocity.length() < 0.01, f.def_id + " docked at rest")
 		var nose: Vector3 = ship.get_meta("nose_local")
 		var dock_point: Vector3 = ship.get_meta("dock_point")
 		check((ship.global_transform * nose).distance_to(dock_point) < 0.1, f.def_id + " bow meets ring berth")

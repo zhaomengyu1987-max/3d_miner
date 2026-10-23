@@ -43,6 +43,14 @@ const ORES := {
 const FUEL_ID := "fuel"
 const RARE_IDS := ["rareA", "rareB", "rareC", "rareD", "rareE"]
 
+# Neutral mining fleets: each miner buys a tank from the station before working.
+const NEUTRAL_MINING := {
+	"starting_money": 5000.0,
+	"tank_capacity": 12.0,
+	"fuel_per_second": 0.08,
+	"sell_price_mult": 0.95,
+}
+
 # ---------- 空间站组件（§5.1，既是商品又是建造原料） ----------
 # bom 只用矿石 id；time 秒；price 为单件基准售价
 const COMPONENTS := {
@@ -56,14 +64,35 @@ const COMPONENTS := {
 # price = 一批的总售价。定价规则（2026-10-02 重平衡）: 期望收购价 =
 # price × DEMAND(1.0) × 0.90 ≈ 材料成本 × 2.0 —— 制造要明显比直接卖矿划算。
 const PRODUCTS := {
+	"empireReactiveArmor": {"name": "帝国·反应装甲", "batch": 1, "group": "ship_equipment", "faction": "empire",
+		"bom": {"commonA": 700, "commonB": 200, "rareC": 20}, "time": 420.0, "price": 7000.0},
+	"empireSiegeControl": {"name": "帝国·攻坚火控", "batch": 1, "group": "ship_equipment", "faction": "empire",
+		"bom": {"commonD": 120, "rareA": 25, "rareB": 15}, "time": 360.0, "price": 3800.0},
+	"allianceShieldMatrix": {"name": "联盟·偏转矩阵", "batch": 1, "group": "ship_equipment", "faction": "southern",
+		"bom": {"commonB": 100, "rareB": 25, "rareE": 10}, "time": 420.0, "price": 3200.0},
+	"allianceRepairSwarm": {"name": "联盟·维修蜂群", "batch": 1, "group": "ship_equipment", "faction": "southern",
+		"bom": {"commonC": 120, "commonE": 100, "rareE": 25}, "time": 360.0, "price": 4200.0},
 	"smallArms": {"name": "小型武器", "batch": 100,
 		"bom": {"commonA": 30, "commonB": 25, "commonE": 10}, "time": 120.0, "price": 470.0},
 	"heavyArms": {"name": "重型陆地武器", "batch": 10,
 		"bom": {"commonA": 120, "commonB": 60, "commonC": 40}, "time": 240.0, "price": 1500.0},
 	"nanoRepair": {"name": "纳米修复剂", "batch": 50,
 		"bom": {"rareE": 15, "commonE": 40, "commonC": 20}, "time": 300.0, "price": 1900.0},
-	"plasmaAmmo": {"name": "模块化电浆弹药", "batch": 200,
+	# 初始开放配方：走普通商品库存，可用手工产线制造，不进入探索装备库。
+	"kineticAmmo": {"name": "动能实弹", "batch": 200, "group": "ammo", "open_recipe": true,
+		"bom": {"commonA": 80, "commonB": 40}, "time": 120.0, "price": 710.0},
+	"thermalMissile": {"name": "热能导弹", "batch": 100, "group": "ammo", "open_recipe": true,
+		"bom": {"commonA": 70, "commonB": 45, "commonC": 40, "commonD": 25, "commonE": 35}, "time": 180.0, "price": 1710.0},
+	"heavyTorpedo": {"name": "大型反舰鱼雷", "batch": 10, "group": "ammo", "open_recipe": true,
+		"bom": {"commonA": 500, "commonB": 220, "commonC": 160, "commonD": 100, "commonE": 120}, "time": 420.0, "price": 8000.0},
+	"plasmaAmmo": {"name": "高级电浆弹药", "batch": 200, "group": "ammo", "open_recipe": true,
 		"bom": {"commonC": 60, "rareD": 35, "commonB": 25}, "time": 360.0, "price": 3100.0},
+	"armorPlate": {"name": "装甲附加板", "batch": 1, "group": "ship_equipment", "open_recipe": true,
+		"bom": {"commonA": 600, "commonB": 180, "commonD": 120, "commonE": 100}, "time": 360.0, "price": 6800.0},
+	"resistanceMembrane": {"name": "电镀抗性薄膜", "batch": 1, "group": "ship_equipment", "open_recipe": true,
+		"bom": {"rareB": 8, "rareC": 6, "rareE": 4}, "time": 180.0, "price": 1050.0},
+	"nanoArmorRepairer": {"name": "纳米喷注型装甲修复器", "batch": 1, "group": "ship_equipment", "open_recipe": true,
+		"bom": {"commonA": 120, "commonB": 80, "commonC": 60, "rareB": 12, "rareE": 8}, "time": 300.0, "price": 3150.0},
 	# ---------- MissionOps 子系统装备(MVP: 建造厂可制造) ----------
 	"eq_power_mk1": {"name": "标准反应堆", "batch": 1,
 		"bom": {"commonC": 50, "fueltank": 1}, "time": 240.0, "price": 900.0, "is_equip": true},
@@ -80,6 +109,10 @@ const PRODUCTS := {
 # 即 price = 材料价值 × 1.05 ÷ 0.90 = 材料价值 × 7/6（DEMAND=1.0 时）。
 # 矿石消耗 2026-10-02 上调 50%（配合矿石单价 ×2/3，材料 ₡ 价值不变、挖矿量 +50%）。
 const SHIPS := {
+	"empireLancer": {"name": "帝国·长枪级护卫舰", "faction": "empire",
+		"bom": {"commonA": 1800, "commonB": 700, "commonD": 350, "rareC": 100}, "time": 800.0, "price": 14000.0},
+	"allianceKite": {"name": "联盟·风鸢级护卫舰", "faction": "southern",
+		"bom": {"commonA": 1100, "commonB": 600, "commonC": 500, "rareB": 150}, "time": 800.0, "price": 14000.0},
 	"longbow": {"name": "长弓级会战护卫舰",
 		"bom": {"commonA": 1350, "commonB": 675, "commonC": 525, "commonD": 225, "rareA": 90},
 		"time": 600.0, "price": 12845.0},     # 材料 11,010 → 出价 11,560.5（105.0%）
@@ -155,10 +188,39 @@ const MODULES := {
 # ---------- 来访货舰（§5.3，草案） ----------
 # cap 舱位(1舱位=1矿石单位) / lvl 机库等级门槛 / funds 收购额度
 const FREIGHTERS := {
-	"small": {"name": "小型工业运输舰", "cap": 400.0, "lvl": 1, "funds": 3000.0},
-	"standard": {"name": "标准工业运输舰", "cap": 1200.0, "lvl": 2, "funds": 9000.0},
-	"heavy": {"name": "重型工业运输舰", "cap": 4000.0, "lvl": 3, "funds": 30000.0},
-	"giant": {"name": "托拉斯巨型货运舰", "cap": 12000.0, "lvl": 3, "funds": 90000.0},
+	"small": {"name": "小型工业运输舰", "tier_name": "小型", "cap": 400.0, "lvl": 1, "funds": 3000.0},
+	"standard": {"name": "标准工业运输舰", "tier_name": "标准", "cap": 1200.0, "lvl": 2, "funds": 9000.0},
+	"heavy": {"name": "重型工业运输舰", "tier_name": "重型", "cap": 4000.0, "lvl": 3, "funds": 30000.0},
+	"giant": {"name": "托拉斯巨型货运舰", "tier_name": "巨型", "cap": 12000.0, "lvl": 3, "funds": 90000.0},
+}
+# Economic capacity tiers and physical hull classes are independent.
+# Industrial hulls remain the majority; military visitors retain their own identities.
+const VISITOR_HULL_NAMES := {
+	"industrial": "工业运输舰", "frigate": "护卫舰", "battleship": "战列舰", "flagship": "旗舰",
+}
+const VISITOR_HULL_WEIGHTS := {
+	"small": {"industrial": 100.0},
+	"standard": {"industrial": 70.0, "frigate": 30.0},
+	"heavy": {"industrial": 70.0, "battleship": 30.0},
+	"giant": {"industrial": 70.0, "flagship": 30.0},
+}
+# Additional onboard supplies, purchased from station stock at the current reference price.
+# The existing 5-unit harbour fuel cost is separate from these paid purchases.
+const VISITOR_SUPPLIES := {
+	"industrial": {},
+	"frigate": {"fuel": 20, "plasmaAmmo": 40},
+	"battleship": {"fuel": 60, "plasmaAmmo": 120},
+	"flagship": {"fuel": 120, "plasmaAmmo": 240},
+}
+# 战舰稳定收购这些商品，成交时先于普通矿石/组件；仍受限价、预算、舱位约束。
+const WARSHIP_PRIORITY := ["kineticAmmo", "thermalMissile", "heavyTorpedo", "plasmaAmmo",
+	"armorPlate", "resistanceMembrane", "nanoArmorRepairer"]
+const WARSHIP_ORDER_BATCHES := {"frigate": 0.5, "battleship": 1.0, "flagship": 2.0}
+const ROUTE_SECURITY := {
+	"default_safety": 10.0, "max_safety": 10.0,
+	"wealth_threshold": 10000.0, "wealth_per_pressure": 20000.0,
+	"pressure_per_module": 1.5, "max_pressure": 100.0,
+	"safe_risk_factor": 0.1,
 }
 # 按机库等级的来船档次权重
 const SPAWN_TABLE := {
@@ -169,7 +231,7 @@ const SPAWN_TABLE := {
 # 各档货舰出售的许可证目录（§4.1 来源：来访货舰购买）
 const LICENSE_CATALOG := {
 	"small": ["smallArms", "nanoRepair"],
-	"standard": ["heavyArms", "plasmaAmmo"],
+	"standard": ["heavyArms"],
 	"heavy": ["longbow", "raven", "logistics"],
 	"giant": ["ram", "logistics", "raven"],
 }
@@ -215,6 +277,8 @@ const ECON := {
 
 ## 军用货物（战时吃 war_demand_military）: 武器/弹药/修复剂 + 全部舰船
 const MILITARY := ["smallArms", "heavyArms", "nanoRepair", "plasmaAmmo",
+	"empireReactiveArmor", "empireSiegeControl", "allianceShieldMatrix", "allianceRepairSwarm", "empireLancer", "allianceKite",
+	"kineticAmmo", "thermalMissile", "heavyTorpedo", "armorPlate", "resistanceMembrane", "nanoArmorRepairer",
 	"longbow", "raven", "ram", "logistics"]
 
 # ---------- 货舱占用（舱位=1矿石单位，其余草案） ----------
@@ -228,6 +292,8 @@ const VOLUME := {"ore": 1.0, "fuel": 1.0, "component": 2.0, "product": 1.0, "shi
 const DEMAND := {
 	"ore": 1.0, "fuel": 1.0, "component": 1.0,
 	"smallArms": 1.0, "heavyArms": 1.0, "nanoRepair": 1.0, "plasmaAmmo": 1.0,
+	"kineticAmmo": 1.0, "thermalMissile": 1.0, "heavyTorpedo": 1.0,
+	"armorPlate": 1.0, "resistanceMembrane": 1.0, "nanoArmorRepairer": 1.0,
 	"longbow": 1.0, "raven": 1.0, "ram": 1.0, "logistics": 1.0,
 }
 
@@ -358,6 +424,38 @@ static func is_product(id: String) -> bool:
 	return PRODUCTS.has(id)
 
 
+static func is_open_recipe(id: String) -> bool:
+	return PRODUCTS.has(id) and bool(PRODUCTS[id].get("open_recipe", false))
+
+
+static func requires_license(id: String) -> bool:
+	if recipe_faction(id) != "":
+		return false
+	return SHIPS.has(id) or (PRODUCTS.has(id) and not is_open_recipe(id)
+		and not bool(PRODUCTS[id].get("is_equip", false)))
+
+
+static func recipe_faction(id: String) -> String:
+	return String(PRODUCTS.get(id, SHIPS.get(id, {})).get("faction", ""))
+
+
+static func product_ids(group: String) -> Array:
+	var out := []
+	for id in PRODUCTS:
+		var category: String = "mission" if PRODUCTS[id].get("is_equip", false) else PRODUCTS[id].get("group", "general")
+		if category == group:
+			out.append(id)
+	return out
+
+
+static func tradable_product_ids() -> Array:
+	var out := []
+	for id in PRODUCTS:
+		if not PRODUCTS[id].get("is_equip", false):
+			out.append(id)
+	return out
+
+
 static func is_ship(id: String) -> bool:
 	return SHIPS.has(id)
 
@@ -450,6 +548,10 @@ static func equip_ids() -> Array:
 	out.append_array(PRODUCTS.keys())
 	out.append_array(SHIPS.keys())
 	return out
+
+
+static func licensed_equip_ids() -> Array:
+	return equip_ids().filter(func(id): return requires_license(id))
 
 
 static func equip_name(id: String) -> String:

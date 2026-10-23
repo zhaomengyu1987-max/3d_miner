@@ -6,15 +6,15 @@ const U := preload("res://scripts/WorldUnits.gd").LEGACY_TO_METERS
 
 ## 站体世界绑定（Economy autoload 创建）：
 ## - 空间站本体可点击 → 通知 UI 弹出模块悬浮窗（模块占位模型已移除, 2026-09-30 拍板）
-## - 小型货舰沿用工业船；标准/重型/巨型访客使用护卫舰/战列舰/旗舰。
+## - hull_id 选择工业船/护卫舰/战列舰/旗舰，def_id 只控制运输档次。
 ## - 采矿无人机编队（drone.glb）与激光采矿护卫舰编队（mining_corvette.glb）
 
 ## 来访货舰 3D（经 sences/FreighterShip.tscn 包装）
 const Motion := preload("res://scripts/ships/ShipMotion.gd")
 const VISITOR_SCENES := {
-	"standard": preload("res://sences/ships/FrigateVisitor.tscn"),
-	"heavy": preload("res://sences/ships/BattleshipVisitor.tscn"),
-	"giant": preload("res://sences/ships/FlagshipVisitor.tscn"),
+	"frigate": preload("res://sences/ships/FrigateVisitor.tscn"),
+	"battleship": preload("res://sences/ships/BattleshipVisitor.tscn"),
+	"flagship": preload("res://sences/ships/FlagshipVisitor.tscn"),
 }
 var _traffic_retry := 0.0
 const ShipScene := preload("res://sences/FreighterShip.tscn")
@@ -74,6 +74,7 @@ func _ready() -> void:
 	Economy.money_changed.connect(_update_info_label)
 	Economy.fuel_changed.connect(_update_info_label)
 	Economy.day_changed.connect(func(_d): _update_info_label())
+	WorldState.route_security_changed.connect(_update_info_label)
 	_on_modules_changed()
 	_reconcile_ships()
 	_update_info_label()
@@ -97,8 +98,9 @@ func _update_info_label() -> void:
 	var line2 := "第 %d 日" % Economy.day
 	if total > 0:
 		line2 += " · 泊位 %d/%d" % [Economy.berths.size(), total]
-	_info_label.text = "₡%s · 燃料 %d\n%s" % [
-		EconTheme.money(Economy.money), int(Economy.fuel), line2]
+	_info_label.text = "₡%s · 燃料 %d\n%s\n航道安全 %.1f/10 · 海盗关注 %.0f/100" % [
+		EconTheme.money(Economy.money), int(Economy.fuel), line2,
+		WorldState.route_safety, WorldState.pirate_pressure]
 	_info_label.position = _hub.global_position + Vector3(0, 3.6, 0) * U
 
 
@@ -367,8 +369,8 @@ func _spawn_ship(f: Freighter) -> void:
 	# Departing hulls reserve their lane until fully outside the harbour.
 	if slot < 0:
 		return
-	var visitor := VISITOR_SCENES.has(f.def_id)
-	var packed: PackedScene = VISITOR_SCENES.get(f.def_id, ShipScene)
+	var visitor := VISITOR_SCENES.has(f.hull_id)
+	var packed: PackedScene = VISITOR_SCENES.get(f.hull_id, ShipScene)
 	var node: Node3D = packed.instantiate()
 	_ship_root.add_child(node)
 	var ship_len: float = SHIP_LEN.get(f.def_id, SHIP_LEN["standard"])
@@ -382,6 +384,7 @@ func _spawn_ship(f: Freighter) -> void:
 		motion.acceleration = 3.0 * U
 	node.set_meta("motion", motion)
 	node.set_meta("ship_length", ship_len)
+	node.set_meta("hull_id", f.hull_id)
 	# 归一化: 型号目标长度 ÷ 模型最大边; 模型头向校正(假定长轴=+Y→转到 -Z 前)
 	var ship: Node3D = node.get_child(0) as Node3D if node.get_child_count() > 0 else null
 	if ship != null and not visitor:
@@ -406,7 +409,7 @@ func _spawn_ship(f: Freighter) -> void:
 	node.set_meta("nose_local", nose)
 	node.set_meta("away", radial)
 	var label := Label3D.new()
-	label.text = f.name + (" · " + node.hull_name if visitor else "")
+	label.text = f.name
 	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	label.no_depth_test = true
 	label.pixel_size = 0.004 * U

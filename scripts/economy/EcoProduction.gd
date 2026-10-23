@@ -18,7 +18,7 @@ var research_jobs: Array = []    # 研究作业 {kind,equip,total,left}
 func buy_license(equip: String, count := 1) -> String:
 	if count <= 0:
 		return "数量无效"
-	if not (GameData.PRODUCTS.has(equip) or GameData.SHIPS.has(equip)):
+	if not GameData.requires_license(equip):
 		return "该装备不需要许可证"
 	var total: float = GameData.license_fee(equip) * float(count)
 	if eco.money < total:
@@ -80,8 +80,10 @@ func _equip_time(equip: String) -> float:
 
 
 func production_block_reason(equip: String, batches: int) -> String:
-	if not GameData.is_component(equip) and factory_count() <= 0:
-		return "需要建造厂"  # 组件可手搓（首建机库路径）；产品/舰船要建造厂
+	if GameData.recipe_faction(equip) != "" and not blueprints.has(equip):
+		return "需要势力蓝图（完成对应势力的生产委托）"
+	if not GameData.is_component(equip) and not GameData.is_open_recipe(equip) and factory_count() <= 0:
+		return "需要建造厂"
 	var need := effective_materials(equip)
 	for id in need:
 		var per := int(need[id]) * batches
@@ -90,8 +92,7 @@ func production_block_reason(equip: String, batches: int) -> String:
 	# 许可证只管产品/舰船——组件（空间站结构）永远免许可证（2026-09-30 修 bug）
 	# MVP: MissionOps 装备(is_equip)免许可证(蓝图 §15.3 许可制造 M3 接)
 	# 产线满不再拦截：继续下单会进入排队（2026-09-30 拍板）
-	var is_mission_equip: bool = GameData.PRODUCTS.has(equip) and GameData.PRODUCTS[equip].get("is_equip", false)
-	if not is_mission_equip and not GameData.is_component(equip) and not blueprints.has(equip):
+	if GameData.requires_license(equip) and not blueprints.has(equip):
 		var uses := int(licenses.get(equip, 0))
 		if uses < batches:
 			return "许可证次数不足（去机库向货舰购买）"
@@ -112,8 +113,7 @@ func start_production(equip: String, batches: int) -> String:
 	# 许可证只管产品/舰船：组件不消耗许可证、也不涨逆向（2026-09-30 修 bug）
 	# MVP: MissionOps 装备(is_equip)免许可证——基础装备直接造(船长令 2026-10-05)
 	# 排队制下许可证在下单时锁定扣除、取消时退还（完工只涨逆向）
-	var is_mission_equip2: bool = GameData.PRODUCTS.has(equip) and GameData.PRODUCTS[equip].get("is_equip", false)
-	var uses_license := not is_mission_equip2 and not blueprints.has(equip) and not GameData.is_component(equip)
+	var uses_license := GameData.requires_license(equip) and not blueprints.has(equip)
 	if uses_license:
 		licenses[equip] = int(licenses.get(equip, 0)) - batches
 		if int(licenses[equip]) <= 0:
@@ -222,6 +222,8 @@ func research_speed() -> float:
 
 
 func research_block_reason(kind: String, equip: String) -> String:
+	if not GameData.requires_license(equip):
+		return "该物品无需蓝图研究"
 	if eco.module_level("research") <= 0:
 		return "需要研究站"
 	if research_jobs.size() >= research_slots():

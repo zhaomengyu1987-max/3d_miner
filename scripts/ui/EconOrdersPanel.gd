@@ -29,13 +29,14 @@ func _connect_signals() -> void:
 
 
 func _rebuild() -> void:
+	var player_sells: Array = Economy.sell_orders.filter(func(o): return Economy.market.is_player_order(o))
 	var expiring := 0
-	for o in Economy.sell_orders + Economy.buy_orders:
+	for o in player_sells + Economy.buy_orders:
 		if Economy.order_remaining_days(o) <= 0.5:
 			expiring += 1
 	var head := EconTheme.rich("")
 	head.text = "[color=#8ea2bd]挂卖[/color] %d 单    [color=#8ea2bd]挂买[/color] %d 单    %s" % [
-		Economy.sell_orders.size(), Economy.buy_orders.size(),
+		player_sells.size(), Economy.buy_orders.size(),
 		"[color=#F39058]⚠ %d 单即将到期[/color]" % expiring if expiring > 0 else "（选中行后点取消；到期自动退回）"]
 	body.add_child(head)
 
@@ -56,8 +57,8 @@ func _rebuild() -> void:
 	# 行布局: 卖单在前(绿标), 买单在后(橙标); meta 记挂单稳定 uid（2026-10-01 修陈旧下标:
 	# market_changed 每秒触发整表重建, 成交/到期会移位数组——记下标会误撤别的单, uid 恒稳）
 	var meta: Array = []
-	for i in Economy.sell_orders.size():
-		var o: Dictionary = Economy.sell_orders[i]
+	for i in player_sells.size():
+		var o: Dictionary = player_sells[i]
 		var sold: int = int(o.get("orig", o["qty"])) - int(o["qty"])
 		list.add_item("[卖] %s @%s   余 %d/%d   成交 %d   剩 %.1f 天" % [
 			GameData.good_name(String(o["goods"])), _price_txt(o), int(o["qty"]),

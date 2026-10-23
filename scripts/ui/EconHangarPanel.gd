@@ -21,6 +21,7 @@ func _connect_signals() -> void:
 	Economy.fuel_changed.connect(_sig_refresh)
 	Economy.money_changed.connect(_sig_refresh)      # 许可证按钮的可用性/价格
 	Economy.licenses_changed.connect(_sig_refresh)   # 机库是唯一显示"持有 N 次"的面板
+	WorldState.route_security_changed.connect(_sig_refresh)
 
 
 func _process(_delta: float) -> void:
@@ -41,10 +42,13 @@ func _rebuild() -> void:
 	var lv := Economy.module_level("hangar")
 	var lv_def: Dictionary = GameData.MODULES["hangar"]["levels"][lv - 1]
 	var head := EconTheme.rich("")
-	head.text = "[color=#8ea2bd]泊位[/color] %d/%d    [color=#8ea2bd]可停靠[/color] %s    [color=#8ea2bd]燃料[/color] %d（到港/离港 -%d）" % [
+	head.text = "[color=#8ea2bd]泊位[/color] %d/%d    [color=#8ea2bd]运输档次[/color] %s    [color=#8ea2bd]燃料[/color] %d（到港/离港 -%d）" % [
 		Economy.berths.size(), lv_def["berths"], _ship_names(lv_def["ships"]),
 		int(Economy.fuel), int(GameData.FUEL["visit_cost"])]
 	body.add_child(head)
+	body.add_child(EconTheme.label("航道安全 %.1f/10 · 海盗关注 %.1f/100 · 站内资产 %s" % [
+		WorldState.route_safety, WorldState.pirate_pressure, EconTheme.money(WorldState.station_wealth)], EconTheme.ACCENT, 12))
+	body.add_child(EconTheme.label("港口消耗燃料 %d；战舰另行购买燃料和电浆弹药。" % int(GameData.FUEL.visit_cost), EconTheme.DIM, 12))
 	body.add_child(EconTheme.label("货舰自动与「本地市场」挂单成交，停留 60 秒。", EconTheme.DIM, 12))
 
 	for f in Economy.berths:
@@ -68,7 +72,7 @@ func _rebuild() -> void:
 	# 与货舰渠道并存：货舰浮动价（普通 1.0~1.1×、走私 0.8×），这里是稳定官价。
 	body.add_child(EconTheme.hsep(4))
 	body.add_child(_section("许可证现货 · 官价（材料成本 ×%d%%）" % int(GameData.LICENSE_FEE_RATE * 100.0)))
-	for equip in GameData.equip_ids():
+	for equip in GameData.licensed_equip_ids():
 		body.add_child(_license_row(equip))
 
 
@@ -91,6 +95,14 @@ func _berth_card(f: Freighter) -> Control:
 	var info := EconTheme.label("舱位 %d/%d · 资金 %s · 自动撮合市场挂单中" % [
 		int(f.cargo_units), int(f.cap), EconTheme.money(f.funds)], EconTheme.DIM, 12)
 	v.add_child(info)
+	if not f.supplies_requested.is_empty():
+		var complete := true
+		for gid in f.supplies_requested:
+			complete = complete and int(f.supplies_received.get(gid, 0)) >= int(f.supplies_requested[gid])
+		v.add_child(EconTheme.label("战舰补给：燃料 %d/%d · 电浆弹药 %d/%d · 收入 %s" % [
+			int(f.supplies_received.get("fuel", 0)), int(f.supplies_requested.get("fuel", 0)),
+			int(f.supplies_received.get("plasmaAmmo", 0)), int(f.supplies_requested.get("plasmaAmmo", 0)),
+			EconTheme.money(f.supplies_income)], EconTheme.GOOD if complete else EconTheme.WARN, 12))
 	return card
 
 
@@ -131,5 +143,5 @@ func _buy_license(equip: String) -> void:
 func _ship_names(ids: Array) -> String:
 	var out: Array[String] = []
 	for s in ids:
-		out.append(GameData.FREIGHTERS[s]["name"])
+		out.append(GameData.FREIGHTERS[s]["tier_name"])
 	return " / ".join(out)

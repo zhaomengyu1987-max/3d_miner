@@ -162,6 +162,10 @@ func _show_report(r: Dictionary) -> void:
 			" (部分×0.6)" if partial else ""]
 	else:
 		_total.text = "任务失败 · 无奖励"
+	if r.has("route_safety_gain"):
+		_total.text += " · 航道安全+%.1f" % float(r.route_safety_gain)
+	elif r.get("route_safety_pending", false):
+		_total.text += " · 航道安全收益待结算"
 
 
 func _loot_row(item: Dictionary, destroyed: bool) -> PanelContainer:

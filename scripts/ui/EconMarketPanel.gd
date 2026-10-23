@@ -147,10 +147,12 @@ func _market_ids() -> Array:
 	all.append_array(GameData.COMPONENTS.keys())
 	for e in GameData.PRODUCTS:
 		all.append(e)
-		all.append("lic:" + e)
+		if GameData.requires_license(e):
+			all.append("lic:" + e)
 	for e in GameData.SHIPS:
 		all.append(e)
-		all.append("lic:" + e)
+		if GameData.requires_license(e):
+			all.append("lic:" + e)
 	return all
 
 
@@ -174,14 +176,19 @@ func _fill_goods_list() -> void:
 	_goods_list.clear()
 	var prod_lic: Array = []
 	for e in GameData.PRODUCTS.keys():
-		prod_lic.append("lic:" + e)
+		if GameData.requires_license(e):
+			prod_lic.append("lic:" + e)
 	var ship_lic: Array = []
 	for e in GameData.SHIPS.keys():
-		ship_lic.append("lic:" + e)
+		if GameData.requires_license(e):
+			ship_lic.append("lic:" + e)
 	var groups := [
 		["矿石", GameData.ORES.keys()],
 		["空间站组件", GameData.COMPONENTS.keys()],
-		["小型产品（成品）", GameData.PRODUCTS.keys()],
+		["弹药（战舰优先收购）", GameData.product_ids("ammo")],
+		["舰用装备（战舰优先收购）", GameData.product_ids("ship_equipment")],
+		["小型产品（成品）", GameData.product_ids("general")],
+		["探索派遣子系统", GameData.product_ids("mission")],
 		["舰船船体（成品）", GameData.SHIPS.keys()],
 		["产品许可证（每张 %d 次）" % GameData.LICENSE_USES_PRODUCT, prod_lic],
 		["舰船许可证（每张 %d 次）" % GameData.LICENSE_USES_SHIP, ship_lic],
@@ -210,8 +217,8 @@ func _fill_goods_list() -> void:
 				label = "%s（%d 次/张）" % [GameData.equip_name(eq), GameData.license_uses(eq)]
 			else:
 				label = _disp_name(String(id))
-			# 仅组件/许可证可挂买(货舰只卖这两类), 其余标注引导玩家只挂卖
-			var sell_only: bool = not (GameData.is_component(id) or id.begins_with("lic:"))
+			# Neutral fleets can also supply ore through their market listings.
+			var sell_only: bool = not Economy.freighter_sells(id)
 			var icon := _cat_icon(id)
 			var ii := _goods_list.add_item("%s   %s%s" % [label, price_txt,
 				"  ·仅卖" if sell_only else ""])
@@ -277,7 +284,7 @@ func _fill_order_book(parent: VBoxContainer) -> void:
 	var sellers_box := EconTheme.vbox(1)
 	sellers_box.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	book_split.add_child(sellers_box)
-	sellers_box.add_child(_box_title("Sellers · 货舰出售", EconTheme.WARN))
+	sellers_box.add_child(_box_title("Sellers · 货舰 / 中立舰队出售", EconTheme.WARN))
 	sellers_box.add_child(EconTheme.label(EconTheme.order_header(), EconTheme.DIM, 11))
 	_sellers_list = _make_list()
 	_sellers_list.item_activated.connect(func(idx: int): _on_order_click(idx, false))
@@ -289,7 +296,7 @@ func _fill_order_book(parent: VBoxContainer) -> void:
 		if id.begins_with("lic:"):
 			qty_txt = "×%d(%d次)" % [int(o["qty"]), int(o.get("uses", 0))]  # 压进 order_line 12 字符列
 		_sellers_list.add_item(EconTheme.order_line(qty_txt, EconTheme.money(o["price"]),
-			str(o["from"]), "剩 %ds" % int(o.get("left_s", 0))))
+			str(o["from"]), String(o.get("left_text", "剩 %ds" % int(o.get("left_s", 0))))))
 	# 我的挂买并入出售簿（青色 [你] 标）
 	# 【2026-10-02 修】挂单行必须显式含"数量 + 限价"（原来只有"余 15/15 等待货舰供货"，看不出价格）
 	for bo in Economy.buy_orders:
@@ -325,7 +332,7 @@ func _fill_order_book(parent: VBoxContainer) -> void:
 		# 货舰挂单一律白(2026-10-02 拍板): 最优行用▲标记, 不再用色
 	# 我的挂卖并入收购簿（货舰到港自动扫, 扫完可再挂——2026-10-01 拍板）
 	for so in Economy.sell_orders:
-		if String(so["goods"]) == id:
+		if Economy.market.is_player_order(so) and String(so["goods"]) == id:
 			var mi := _buyers_list.add_item(EconTheme.order_line(
 				"余 %d/%d" % [int(so["qty"]), int(so.get("orig", so["qty"]))],
 				_price_txt(float(so.get("price", 0.0))), "[你·挂卖]",
@@ -402,7 +409,7 @@ func _open_quote(gid: String) -> void:
 	var my_s := 0
 	var my_b := 0
 	for o in Economy.sell_orders:
-		if String(o["goods"]) == gid:
+		if Economy.market.is_player_order(o) and String(o["goods"]) == gid:
 			my_s = int(o["qty"])
 	for b2 in Economy.buy_orders:
 		if String(b2["goods"]) == gid:
@@ -474,6 +481,12 @@ func _on_trade_confirmed(goods: String, qty: int, p_price: float, p_is_buy: bool
 
 func _collect_offers(goods_id: String, is_bid: bool) -> Array:
 	var out: Array = []
+	if not is_bid:
+		for order in Economy.sell_orders:
+			if not Economy.market.is_player_order(order) and String(order.goods) == goods_id:
+				out.append({"goods": goods_id, "price": float(order.price), "qty": int(order.qty),
+					"from": String(order.get("owner_name", "中立采矿舰队")),
+					"left_text": "剩 %.1f天" % Economy.order_remaining_days(order)})
 	for f in Economy.berths:
 		for o in (f.buy_offers if is_bid else f.sell_offers):
 			if String(o["goods"]) == goods_id:

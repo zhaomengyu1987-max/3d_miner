@@ -20,6 +20,46 @@ var price_mod: Dictionary = {}
 var _order_uid := 1               # 挂单稳定唯一 id（修 UI 陈旧下标误撤, 2026-10-01）
 
 
+func is_player_order(order: Dictionary) -> bool:
+	return String(order.get("owner", "")) == ""
+
+
+## One active sell order per neutral faction. Goods never pass through player inventory.
+func post_neutral_sell(owner: String, owner_name: String, goods: String, quantity: int) -> bool:
+	if not eco.neutral_fleets.fleets.has(owner) or not GameData.is_ore(goods) or quantity <= 0:
+		return false
+	for order in sell_orders:
+		if String(order.get("owner", "")) != owner:
+			continue
+		if String(order.goods) != goods:
+			return false
+		order.qty = int(order.qty) + quantity
+		order.orig = int(order.orig) + quantity
+		eco.market_changed.emit()
+		return true
+	var price := expected_freighter_price(goods, false) * price_factor(goods) \
+		* float(GameData.NEUTRAL_MINING["sell_price_mult"])
+	sell_orders.append({"goods": goods, "qty": quantity, "orig": quantity,
+		"price": price, "day": eco.day, "uid": _order_uid, "owner": owner, "owner_name": owner_name})
+	_order_uid += 1
+	eco.market_changed.emit()
+	return true
+
+
+func _refund_sell(order: Dictionary) -> void:
+	if is_player_order(order):
+		eco._refund({String(order.goods): int(order.qty)})
+	else:
+		eco.neutral_fleets.return_unsold(String(order.owner), String(order.goods), int(order.qty))
+
+
+func _credit_sell(order: Dictionary, total: float) -> void:
+	if is_player_order(order):
+		eco.add_money(total)
+	else:
+		eco.neutral_fleets.credit_sale(String(order.owner), total)
+
+
 ## 某货物的当前价格因子（全局 "*" × 该货物条目，夹 0.05 下限）
 func price_factor(goods_id: String) -> float:
 	return Freighter.resolve_price_mod(price_mod, goods_id)
@@ -72,6 +112,14 @@ func expected_freighter_price(goods_id: String, is_buy: bool) -> float:
 func fillable_range(goods_id: String, is_buy: bool) -> Vector2:
 	var base := unit_price_of(goods_id)
 	if is_buy:
+		var neutral_low := INF
+		var neutral_high := 0.0
+		for order in sell_orders:
+			if not is_player_order(order) and String(order.goods) == goods_id and int(order.qty) > 0:
+				neutral_low = minf(neutral_low, float(order.price))
+				neutral_high = maxf(neutral_high, float(order.price))
+		if neutral_high > 0.0:
+			return Vector2(neutral_low, neutral_high)
 		if goods_id.begins_with("lic:"):
 			return Vector2(base * 1.00, base * 1.10)
 		if GameData.is_component(goods_id):
@@ -87,6 +135,10 @@ func fillable_range(goods_id: String, is_buy: bool) -> Vector2:
 ## 基准价永远高于上限 ⇒ 默认价是个永远不会成交的价格。
 func suggest_price(goods_id: String, is_buy: bool) -> float:
 	var best := 0.0
+	if is_buy:
+		for order in sell_orders:
+			if not is_player_order(order) and String(order.goods) == goods_id and int(order.qty) > 0:
+				best = float(order.price) if best <= 0.0 else minf(best, float(order.price))
 	for f in eco.berths:
 		var o: Dictionary = f.sell_offer_for(goods_id) if is_buy else f.buy_offer_for(goods_id)
 		if o.is_empty():
@@ -109,6 +161,9 @@ func suggest_price(goods_id: String, is_buy: bool) -> float:
 ## 货舰是否会出售该货物 —— 只有许可证与组件进 sell_offers（Freighter.gd:129-165），
 ## 矿石/燃料/产品/舰船都不会：对这些货物挂买单永远不会成交（UI 要给出提示）。
 func freighter_sells(goods_id: String) -> bool:
+	for order in sell_orders:
+		if not is_player_order(order) and String(order.goods) == goods_id and int(order.qty) > 0:
+			return true
 	return goods_id.begins_with("lic:") or GameData.is_component(goods_id)
 
 
@@ -129,8 +184,9 @@ func expire_orders() -> int:
 		if float(eco.day - int(o.get("day", eco.day))) < dur:
 			continue
 		sell_orders.remove_at(i)
-		eco._refund({String(o["goods"]): int(o["qty"])})
-		eco.post_event("挂卖到期：%s ×%d 已退回库存" % [_goods_label(String(o["goods"])), int(o["qty"])], "warn")
+		_refund_sell(o)
+		if is_player_order(o):
+			eco.post_event("挂卖到期：%s ×%d 已退回库存" % [_goods_label(String(o["goods"])), int(o["qty"])], "warn")
 		n += 1
 	for i in range(buy_orders.size() - 1, -1, -1):
 		var b: Dictionary = buy_orders[i]
@@ -161,7 +217,7 @@ func post_sell(goods_id: String, qty: int, price := -1.0) -> String:
 		eco.inv[goods_id] = int(eco.inv.get(goods_id, 0)) - qty
 		eco.inventory_changed.emit()
 	for o in sell_orders:
-		if String(o["goods"]) == goods_id and absf(float(o.get("price", 0.0)) - px) < 0.005:
+		if is_player_order(o) and String(o["goods"]) == goods_id and absf(float(o.get("price", 0.0)) - px) < 0.005:
 			o["qty"] = int(o["qty"]) + qty
 			o["orig"] = int(o["orig"]) + qty  # 合并同货物同价位挂单
 			o["day"] = eco.day
@@ -199,6 +255,8 @@ func post_buy(goods_id: String, qty: int, price := -1.0) -> String:
 func cancel_sell_by_uid(uid: int) -> bool:
 	for i in sell_orders.size():
 		if int(sell_orders[i].get("uid", -1)) == uid:
+			if not is_player_order(sell_orders[i]):
+				return false
 			cancel_sell(i)
 			return true
 	return false
@@ -216,6 +274,8 @@ func cancel_sell(index: int) -> void:
 	if index < 0 or index >= sell_orders.size():
 		return
 	var o: Dictionary = sell_orders[index]
+	if not is_player_order(o):
+		return
 	sell_orders.remove_at(index)
 	eco._refund({String(o["goods"]): int(o["qty"])})
 	eco.market_changed.emit()
@@ -230,13 +290,13 @@ func cancel_buy(index: int) -> void:
 
 ## 每秒一拍：到港货舰 ↔ 市场挂单 自动撮合
 func _auto_trade(dt: float) -> void:
-	if eco.berths.is_empty() or (sell_orders.is_empty() and buy_orders.is_empty()):
+	if sell_orders.is_empty() and buy_orders.is_empty():
 		return
 	var rate: float = GameData.ECON["trade_rate"] \
 		* (1.0 + GameData.ECON["container_rate_mult"] * eco.module_count("container")) * dt
 	if eco.debug_instant:
 		rate *= 50.0
-	var traded := false
+	var traded := _neutral_sells_to_player(rate)
 	for f in eco.berths.duplicate():
 		# trade_rate = 每艘船【总】吞吐/秒——买卖共享同一预算(2026-10-01 修双向翻倍)。
 		# 双向都要跑: `or` 短路会让"收货成功"的货舰当拍不卖货; 若它当拍就舱满离站,
@@ -256,10 +316,10 @@ func _auto_trade(dt: float) -> void:
 ## 货舰按收购清单吃进市场挂卖
 func _freighter_buys(f: Freighter, budget: float) -> int:
 	var used := 0
-	for offer in f.buy_offers:
+	for offer in f.prioritized_buy_offers():
 		if budget - float(used) < 1.0 or f.funds < float(offer["price"]):
 			continue
-		for listing in sell_orders:
+		for listing in sell_orders.duplicate():
 			if String(listing["goods"]) != String(offer["goods"]) or int(listing["qty"]) <= 0:
 				continue
 			var price: float = float(offer["price"])
@@ -274,17 +334,56 @@ func _freighter_buys(f: Freighter, budget: float) -> int:
 			if n <= 0:
 				continue
 			_log_trade(String(offer["goods"]), price, n)
-			if GameData.is_military(String(offer["goods"])):
+			if is_player_order(listing) and GameData.is_military(String(offer["goods"])):
 				eco.military_goods_sold.emit(String(offer["goods"]), n, price)
 			listing["qty"] = int(listing["qty"]) - n
 			offer["qty_left"] = float(offer["qty_left"]) - n
 			f.cargo_units += n * GameData.good_volume(String(offer["goods"]))
 			f.funds -= price * n
-			eco.add_money(price * n)
+			_credit_sell(listing, price * n)
+			if is_player_order(listing) and f.faction_id != "":
+				eco.diplomacy.record_trade(f.faction_id, price * n)
 			used += n
 			if int(listing["qty"]) <= 0:
 				sell_orders.erase(listing)
 	return used
+
+
+## Player buy orders may also match neutral ore sellers, without a visiting freighter.
+func _neutral_sells_to_player(budget: float) -> bool:
+	var traded := false
+	for seller in sell_orders.duplicate():
+		if is_player_order(seller):
+			continue
+		var remaining := int(budget)
+		for buyer in buy_orders.duplicate():
+			if String(buyer.goods) != String(seller.goods) or float(buyer.price) < float(seller.price):
+				continue
+			var price := maxf(0.01, float(seller.price))
+			var count := mini(remaining, mini(int(seller.qty), int(buyer.qty)))
+			count = mini(count, int(eco.money / price))
+			if count <= 0:
+				continue
+			eco.try_spend(float(count) * price)
+			_credit_sell(seller, float(count) * price)
+			var goods: String = seller.goods
+			if goods == GameData.FUEL_ID:
+				eco.fuel += count
+				eco.fuel_changed.emit()
+			else:
+				eco.inv[goods] = int(eco.inv.get(goods, 0)) + count
+				eco.inventory_changed.emit()
+			seller.qty = int(seller.qty) - count
+			buyer.qty = int(buyer.qty) - count
+			remaining -= count
+			_log_trade(goods, price, count)
+			traded = true
+			if int(buyer.qty) <= 0:
+				buy_orders.erase(buyer)
+			if int(seller.qty) <= 0:
+				sell_orders.erase(seller)
+				break
+	return traded
 
 
 ## 货舰按出售清单供应市场挂买

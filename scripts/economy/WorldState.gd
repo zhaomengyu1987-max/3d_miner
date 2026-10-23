@@ -18,6 +18,7 @@ extends Node
 
 signal phase_changed(phase_name: String)
 signal stockpile_changed(value: float, target: float)
+signal route_security_changed
 
 enum Phase { PEACE, BUILDUP, WAR }
 
@@ -33,6 +34,12 @@ var _save_path := "user://world_state_save.json"
 ## M2：10 小国当前阵营归属（fid -> "empire"/"southern"）。初始值来自
 ## GameData.MINOR_FACTIONS，倒戈事件会原地改写，随 _save()/_load() 持久化。
 var _minor_bloc: Dictionary = {}
+var route_safety := float(GameData.ROUTE_SECURITY["default_safety"])
+var pirate_pressure := 0.0
+var station_wealth := 0.0
+var station_development := 0
+var last_harassment_wall := 0.0
+var _security_events: Dictionary = {}
 
 
 func _ready() -> void:
@@ -42,8 +49,118 @@ func _ready() -> void:
 	_load()
 	Economy.day_changed.connect(_on_day_changed)
 	Economy.military_goods_sold.connect(_on_military_sale)
+	for event in [Economy.money_changed, Economy.inventory_changed, Economy.fuel_changed,
+		Economy.modules_changed, Economy.market_changed, Economy.jobs_changed]:
+		event.connect(_refresh_security_metrics)
+	_refresh_security_metrics()
 	# 读档可能是在某个相位中途进来的：先对齐 phase，不重复播报事件
 	_sync_phase(Economy.day, true)
+
+
+# ================= 航道安全 / 海盗关注度 =================
+
+func _goods_value(goods: Dictionary) -> float:
+	var value := 0.0
+	for gid in goods:
+		value += maxf(0.0, float(goods[gid])) * GameData.good_unit_price(String(gid))
+	return value
+
+
+func _refresh_security_metrics() -> void:
+	var wealth: float = maxf(0.0, Economy.money) + maxf(0.0, Economy.fuel) * GameData.good_unit_price("fuel")
+	wealth += _goods_value(Economy.inv)
+	# Escrow and paid work remain station assets; moving goods into an order is not concealment.
+	for order in Economy.sell_orders:
+		if Economy.market.is_player_order(order):
+			wealth += maxi(0, int(order.qty)) * GameData.good_unit_price(String(order.goods))
+	for order in Economy.order_queue:
+		wealth += _goods_value(order.get("paid", {}))
+	for job in Economy.prod_jobs:
+		wealth += _goods_value(Economy.effective_materials(String(job.equip))) * int(job.batches)
+	var development := 0
+	for id in GameData.MODULES:
+		var definition: Dictionary = GameData.MODULES[id]
+		if definition.has("levels"):
+			var level: int = clampi(Economy.module_level(id), 0, definition.levels.size())
+			development += level
+			for i in level:
+				wealth += _goods_value(definition.levels[i].cost)
+		else:
+			var count: int = Economy.module_count(id)
+			development += count
+			wealth += _goods_value(definition.cost) * count
+		if Economy.module_jobs.has(id):
+			wealth += _goods_value(Economy.module_next_cost(id))
+	var config: Dictionary = GameData.ROUTE_SECURITY
+	var pressure := maxf(0.0, wealth - float(config.wealth_threshold)) / float(config.wealth_per_pressure)
+	pressure += float(development) * float(config.pressure_per_module)
+	pressure = clampf(pressure, 0.0, float(config.max_pressure))
+	var changed := not is_equal_approx(pressure, pirate_pressure) or not is_equal_approx(wealth, station_wealth) \
+		or development != station_development
+	station_wealth = wealth
+	station_development = development
+	pirate_pressure = pressure
+	if changed:
+		route_security_changed.emit()
+
+
+## An input for future harassment scheduling; no automatic raids are scheduled here.
+func pirate_risk() -> float:
+	var config: Dictionary = GameData.ROUTE_SECURITY
+	var danger := 1.0 - route_safety / float(config.max_safety)
+	var safety_factor := lerpf(float(config.safe_risk_factor), 1.0, danger)
+	return clampf(pirate_pressure / float(config.max_pressure) * safety_factor, 0.0, 1.0)
+
+
+func _change_route_safety(delta: float, event_id: String, reason: String, harassment := false) -> Dictionary:
+	if not is_finite(delta):
+		return {"ok": false, "why": "安全度变化无效"}
+	if _security_events.has(event_id):
+		return {"ok": true, "gain": float(_security_events[event_id]), "already_applied": true}
+	var before := route_safety
+	var before_wall := last_harassment_wall
+	var before_events := _security_events.duplicate()
+	route_safety = clampf(route_safety + delta, 0.0, float(GameData.ROUTE_SECURITY.max_safety))
+	var gain := route_safety - before
+	_security_events[event_id] = gain
+	while _security_events.size() > 512:
+		_security_events.erase(_security_events.keys()[0])
+	if harassment:
+		last_harassment_wall = Time.get_unix_time_from_system()
+	if not _save():
+		route_safety = before
+		last_harassment_wall = before_wall
+		_security_events = before_events
+		return {"ok": false, "why": "世界存档写入失败"}
+	route_security_changed.emit()
+	if not is_zero_approx(gain):
+		Economy.post_event("航道安全 %+.1f → %.1f/10 · %s" % [gain, route_safety, reason], "good" if gain > 0.0 else "warn")
+	return {"ok": true, "gain": gain, "already_applied": false}
+
+
+func adjust_route_safety(delta: float, event_id: String, reason := "航道状况变化") -> Dictionary:
+	if event_id.is_empty():
+		return {"ok": false, "why": "缺少事件标识"}
+	return _change_route_safety(delta, event_id, reason)
+
+
+func record_pirate_harassment(event_id: String, severity := 1.0) -> Dictionary:
+	if event_id.is_empty() or not is_finite(severity) or severity <= 0.0:
+		return {"ok": false, "why": "骚扰事件无效"}
+	return _change_route_safety(-severity, "pirate:" + event_id, "海盗骚扰", true)
+
+
+func apply_route_mission_result(report: Dictionary) -> Dictionary:
+	var definition: Dictionary = MissionDefs.TASKS.get(String(report.get("task_id", "")), {})
+	var gain := float(definition.get("route_safety_gain", 0.0))
+	if gain <= 0.0 or not (bool(report.get("success", false)) or bool(report.get("partial", false))):
+		return {"ok": true, "gain": 0.0}
+	if String(report.get("mission_id", "")).is_empty():
+		return {"ok": false, "why": "缺少任务标识"}
+	if not bool(report.get("success", false)):
+		gain *= 0.6
+	var event_id := "mission:%s:%d:%.6f" % [report.mission_id, int(report.get("seed", 0)), float(report.get("timestamp", 0))]
+	return _change_route_safety(gain, event_id, String(definition.name))
 
 
 func _on_day_changed(day: int) -> void:
@@ -86,7 +203,9 @@ func _enter_phase(new_phase: int) -> void:
 			if war_initial_stockpile > 0.0:
 				var scale: float = war_initial_stockpile / float(GameData.WORLD["stockpile_target"])
 				var flavor := "小规模边境摩擦" if scale < 0.6 else ("局部冲突" if scale < 1.2 else "大规模会战")
-				Economy.post_event("边境战事平息（%s）——市场需求回落至日常基线" % flavor, "info")
+				Economy.post_event("边境战事平息（%s）——市场需求回落至日常基线" % flavor, "info",
+					_letter_details(current_faction, "停火与通商恢复通知",
+						"致空间站管理者：\n\n边境战事已经平息。军需采购将逐步结束，市场需求恢复日常水平。感谢贵站在冲突期间提供的补给。"))
 			stockpile = 0.0
 			war_initial_stockpile = 0.0
 		Phase.BUILDUP:
@@ -96,12 +215,25 @@ func _enter_phase(new_phase: int) -> void:
 			_roll_minor_defections()
 			_roll_minor_friction()
 			Economy.post_event("边境传来军情：%s 开始大规模军备调度，物流需求预计持续走高" % \
-				String(GameData.WORLD_FACTIONS[current_faction]["name"]), "warn")
+				String(GameData.WORLD_FACTIONS[current_faction]["name"]), "warn",
+				_letter_details(current_faction, "军备采购通告",
+					"致空间站管理者：\n\n我方已开始军备调度，近期将增加补给采购。贵站可在本地市场挂售弹药、舰用装备及其他军需品，采购团到港后将按报价收购。"))
 		Phase.WAR:
 			war_initial_stockpile = maxf(stockpile, 1.0)
 			Economy.post_event("局部冲突爆发：%s 当面开战——军需订单短期内暴涨" % \
-				String(GameData.WORLD_FACTIONS[current_faction]["name"]), "warn")
+				String(GameData.WORLD_FACTIONS[current_faction]["name"]), "warn",
+				_letter_details(current_faction, "战时补给联络函",
+					"致空间站管理者：\n\n边境局部冲突已经爆发，我方正扩大军需采购。请留意本地市场的采购报价及港内补给需求。"))
 	phase_changed.emit(phase_name(new_phase))
+
+
+func _letter_details(faction_id: String, title: String, body := "") -> Dictionary:
+	var faction: Dictionary = GameData.WORLD_FACTIONS.get(faction_id, GameData.MINOR_FACTIONS.get(faction_id, {}))
+	var details := {"category": "faction", "title": title, "faction_id": faction_id,
+		"sender": "%s联络处" % String(faction.get("name", faction_id))}
+	if body != "":
+		details["body"] = body
+	return details
 
 
 ## 相位名（公开接口, 2026-10-02 转正给新闻条/角标用）。p < 0 时用当前相位。
@@ -253,7 +385,7 @@ func _roll_minor_defections() -> void:
 		Economy.post_event("边境风声：%s 倒戈——阵营由【%s】转投【%s】" % [
 			String(GameData.MINOR_FACTIONS[fid]["name"]),
 			String(GameData.WORLD_FACTIONS[cur_bloc]["name"]),
-			String(GameData.WORLD_FACTIONS[new_bloc]["name"])], "warn")
+			String(GameData.WORLD_FACTIONS[new_bloc]["name"])], "warn", _letter_details(String(fid), "阵营变更通告"))
 
 
 ## M3：多战线雏形——10 小国之间的局部摩擦。按 home_sector 分组，如果同一 sector 里
@@ -326,14 +458,18 @@ func _ensure_dealer() -> void:
 	# SHIP_LEN[f.def_id] 查不到会崩（2026-10-02 冒烟测试炸出来的 bug）。
 	# 发牌员是"大批采购船团"概念，视觉上给个 giant 船模比较贴切。
 	f.def_id = "giant"
-	f.name = "军需采购团·%s" % String(GameData.WORLD_FACTIONS[current_faction]["name"])
+	f.hull_id = "flagship"
+	f.faction_id = current_faction
+	f.visit_role = "procurement"
+	f.name = "军需采购团·%s · 旗舰" % String(GameData.WORLD_FACTIONS[current_faction]["name"])
 	f.cap = 1000000000.0   # 概念上是"off-screen 的大批采购船团"，不受单船舱位限制
 	f.funds = float(GameData.WORLD["dealer_funds"])
 	f.dwell_override = maxf(float(days_left_in_phase(Economy.day)), 0.2) * Economy.day_length()
 	if not Economy.dock_special_freighter(f):
 		return  # 泊位已满：先不占位，下一天 _ensure_dealer() 会再试
 	dealer = f
-	Economy.post_event("%s 到港——正在本地市场大举扫货" % f.name, "warn")
+	Economy.post_event("%s 到港——正在本地市场大举扫货" % f.name, "warn",
+		_letter_details(current_faction, "军需采购团到港函"))
 
 
 func _despawn_dealer(reason: String) -> void:
@@ -397,17 +533,23 @@ func _demand_scale() -> float:
 
 # ================= 轻量独立存档（不碰 Economy 的存档结构，降低改动风险） =================
 
-func _save() -> void:
+func _save() -> bool:
 	var data := {
 		"stockpile": stockpile,
 		"war_initial_stockpile": war_initial_stockpile,
 		"current_faction": current_faction,
 		"minor_bloc": _minor_bloc,
+		"route_safety": route_safety, "security_events": _security_events,
+		"last_harassment_wall": last_harassment_wall,
 	}
 	var file := FileAccess.open(_save_path, FileAccess.WRITE)
 	if file:
 		file.store_string(JSON.stringify(data))
+		file.flush()
+		var saved := file.get_error() == OK
 		file.close()
+		return saved
+	return false
 
 
 func _load() -> void:
@@ -424,6 +566,12 @@ func _load() -> void:
 	stockpile = float(parsed.get("stockpile", 0.0))
 	war_initial_stockpile = float(parsed.get("war_initial_stockpile", 0.0))
 	current_faction = String(parsed.get("current_faction", "empire"))
+	var saved_safety := float(parsed.get("route_safety", GameData.ROUTE_SECURITY.default_safety))
+	route_safety = clampf(saved_safety, 0.0, float(GameData.ROUTE_SECURITY.max_safety)) if is_finite(saved_safety) \
+		else float(GameData.ROUTE_SECURITY.default_safety)
+	var saved_events: Variant = parsed.get("security_events", {})
+	_security_events = saved_events if saved_events is Dictionary else {}
+	last_harassment_wall = maxf(0.0, float(parsed.get("last_harassment_wall", 0.0)))
 	var saved_bloc: Variant = parsed.get("minor_bloc", null)
 	if typeof(saved_bloc) == TYPE_DICTIONARY:
 		for fid in saved_bloc:
@@ -437,6 +585,10 @@ func debug_reset() -> void:
 	stockpile = 0.0
 	war_initial_stockpile = 0.0
 	current_faction = "empire"
+	route_safety = float(GameData.ROUTE_SECURITY.default_safety)
+	last_harassment_wall = 0.0
+	_security_events.clear()
+	_refresh_security_metrics()
 	_init_minor_factions()
 	_despawn_dealer("")
 	if FileAccess.file_exists(_save_path):

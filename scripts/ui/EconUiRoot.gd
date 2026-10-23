@@ -14,6 +14,8 @@ const MarketPanel := preload("res://scripts/ui/EconMarketPanel.gd")
 const FactoryPanel := preload("res://scripts/ui/EconFactoryPanel.gd")
 const ResearchPanel := preload("res://scripts/ui/EconResearchPanel.gd")
 const OrdersPanel := preload("res://scripts/ui/EconOrdersPanel.gd")
+const InboxPanel := preload("res://scripts/ui/EconInboxPanel.gd")
+const ContractsPanel := preload("res://scripts/ui/EconContractsPanel.gd")
 
 ## 供 SettingsPanel 静态查询：制造界面是否开着（开则 ESC 不呼出设置）
 static var modal_open := false
@@ -105,6 +107,8 @@ func _ready() -> void:
 	_panels["factory"] = FactoryPanel.new()
 	_panels["research"] = ResearchPanel.new()
 	_panels["orders"] = OrdersPanel.new()
+	_panels["inbox"] = InboxPanel.new()
+	_panels["contracts"] = ContractsPanel.new()
 	for key in _panels:
 		var p = _panels[key]
 		add_child(p)
@@ -515,9 +519,10 @@ func _refresh_popup_buttons() -> void:
 		if id == "":
 			continue
 		var built: bool = Economy.module_level(id) > 0 or Economy.module_count(id) > 0
-		var border := EconTheme.ACCENT if built else EconTheme.BORDER.darkened(0.3)
-		var bg := EconTheme.PANEL2 if built else EconTheme.PANEL2.darkened(0.25)
-		b.add_theme_color_override("font_color", EconTheme.TEXT if built else EconTheme.DIM)
+		var available := built or id == "factory"
+		var border := EconTheme.ACCENT if available else EconTheme.BORDER.darkened(0.3)
+		var bg := EconTheme.PANEL2 if available else EconTheme.PANEL2.darkened(0.25)
+		b.add_theme_color_override("font_color", EconTheme.TEXT if available else EconTheme.DIM)
 		b.add_theme_color_override("font_hover_color", EconTheme.ACCENT)
 		b.add_theme_stylebox_override("normal", EconTheme.style_box(bg, border, 6))
 		b.add_theme_stylebox_override("hover", EconTheme.style_box(bg.lightened(0.08), EconTheme.ACCENT, 6))
@@ -526,6 +531,8 @@ func _refresh_popup_buttons() -> void:
 		if built:
 			var status := "Lv.%d" % m["level"] if m["level"] > 0 else "×%d" % m["count"]
 			b.tooltip_text = "%s（%s）——点击打开" % [GameData.MODULES[id]["name"], status]
+		elif id == "factory":
+			b.tooltip_text = "商品制造（初始手工产线）——点击打开"
 		else:
 			b.tooltip_text = "%s（未建造）——点击去建造" % GameData.MODULES[id]["name"]
 
@@ -595,7 +602,7 @@ func _open_module_panel(id: String, keep_popup := false) -> void:
 		"hangar":
 			open_panel_add("hangar" if Economy.module_level("hangar") > 0 else "build", keep_popup)
 		"factory":
-			open_panel_add("factory" if Economy.module_count("factory") > 0 else "build", keep_popup)
+			open_panel_add("factory", keep_popup)
 		"research":
 			open_panel_add("research" if Economy.module_level("research") > 0 else "build", keep_popup)
 		_:

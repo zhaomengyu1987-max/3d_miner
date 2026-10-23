@@ -36,6 +36,9 @@ const EcoMarketScript := preload("res://scripts/economy/EcoMarket.gd")
 const EcoProductionScript := preload("res://scripts/economy/EcoProduction.gd")
 const EcoFreightersScript := preload("res://scripts/economy/EcoFreighters.gd")
 const EcoModulesScript := preload("res://scripts/economy/EcoModules.gd")
+const NeutralMiningScript := preload("res://scripts/economy/NeutralMiningFleets.gd")
+const InboxScript := preload("res://scripts/economy/StationInbox.gd")
+const FactionScript := preload("res://scripts/economy/FactionRelations.gd")
 
 ## 子模块（对外只暴露本门面；兄弟模块互相访问一律经 eco.* 转发，不互相持引用）
 var wallet: Node
@@ -43,6 +46,9 @@ var market: Node
 var production: Node
 var freight: Node
 var mods: Node
+var neutral_fleets: Node3D
+var inbox: Node
+var diplomacy: Node
 
 # ---- 时钟（留在门面） ----
 var day := 1
@@ -129,12 +135,21 @@ func _ready() -> void:
 	_spawn_submodules()
 	_init_state()
 	load_game()
+	diplomacy.ensure_board()
 	_roll_visit_schedule()
 	# 世界实体与 UI 延后一帧挂到场景树（autoload 先于主场景就绪）
 	call_deferred("_spawn_world_and_ui")
 
 
 func _spawn_submodules() -> void:
+	inbox = InboxScript.new()
+	inbox.name = "StationInbox"
+	inbox.eco = self
+	add_child(inbox)
+	diplomacy = FactionScript.new()
+	diplomacy.name = "FactionRelations"
+	diplomacy.eco = self
+	add_child(diplomacy)
 	wallet = EcoWalletScript.new()
 	wallet.name = "Wallet"
 	wallet.eco = self
@@ -155,6 +170,10 @@ func _spawn_submodules() -> void:
 	mods.name = "Mods"
 	mods.eco = self
 	add_child(mods)
+	neutral_fleets = NeutralMiningScript.new()
+	neutral_fleets.name = "NeutralMiningFleets"
+	neutral_fleets.eco = self
+	add_child(neutral_fleets)
 
 
 func _spawn_world_and_ui() -> void:
@@ -163,6 +182,8 @@ func _spawn_world_and_ui() -> void:
 		_world = StationModulesScript.new()
 		_world.name = "StationModules"
 		scene.add_child(_world)
+		neutral_fleets.bind_world(_world)
+		diplomacy.bind_world(_world)
 	_ui = UiRootScript.new()
 	_ui.name = "EconUiRoot"
 	get_tree().root.add_child(_ui)
@@ -235,6 +256,7 @@ func _process(delta: float) -> void:
 	if _trade_accum >= 1.0:
 		_auto_trade(_trade_accum)
 		_trade_accum = 0.0
+	diplomacy.tick(delta)
 
 
 ## 一个游戏日对应的真实秒数（世界系统按"天"换算特殊货舰停留秒数要用这个，不直接碰 _day_length）
@@ -510,13 +532,22 @@ func set_smuggler_ok(on: bool) -> void:
 
 # ================= 事件与存档（聚合留在门面，JSON 键结构不变） =================
 
-func post_event(text: String, kind := "info") -> void:
+func post_event(text: String, kind := "info", details: Dictionary = {}) -> void:
+	inbox.receive_event(text, kind, details)
 	event_posted.emit(text, kind)
+
+
+## Direct messages do not enter the transient news ticker.
+func post_message(title: String, body: String, sender := "空间站通讯", category := "other", faction_id := "") -> int:
+	return inbox.receive(title, body, category, sender, "info", faction_id)
 
 
 func _init_state() -> void:
 	mods.init_state()
 	wallet.inv.clear()
+	neutral_fleets.reset_state()
+	inbox.reset()
+	diplomacy.reset()
 
 
 ## 制造/研究/模块三类作业统一推进（原 _advance_jobs：任一完工只发一次 jobs_changed）
@@ -538,6 +569,9 @@ func save_game() -> bool:
 		"sell_orders": sell_orders, "buy_orders": buy_orders, "trade_log": trade_log,
 		"price_mod": price_mod,
 		"module_jobs": module_jobs,
+		"neutral_fleets": neutral_fleets.get_state(),
+		"inbox": inbox.get_state(),
+		"diplomacy": diplomacy.get_state(),
 	}
 	var file := FileAccess.open(save_path, FileAccess.WRITE)
 	if file == null:
@@ -581,11 +615,15 @@ func load_game() -> void:
 	research_jobs = parsed.get("research_jobs", [])
 	sell_orders = parsed.get("sell_orders", [])
 	buy_orders = parsed.get("buy_orders", [])
+	neutral_fleets.apply_state(parsed.get("neutral_fleets", {}))
+	inbox.apply_state(parsed.get("inbox", {}))
+	diplomacy.apply_state(parsed.get("diplomacy", {}))
 	trade_log = parsed.get("trade_log", [])
 	for o in sell_orders + buy_orders:
 		if not o.has("uid"):
 			o["uid"] = market._order_uid
 			market._order_uid += 1
+		market._order_uid = maxi(market._order_uid, int(o["uid"]) + 1)
 	price_mod = parsed.get("price_mod", {})
 	module_jobs = parsed.get("module_jobs", {})
 	# 货舰不持久化：读档后泊位清空，来船计划重排

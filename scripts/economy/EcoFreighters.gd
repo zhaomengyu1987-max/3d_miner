@@ -70,6 +70,7 @@ func try_arrive(def_id: String, smuggler: bool) -> bool:
 		eco.fuel_changed.emit()
 	var f := Freighter.make(def_id, smuggler, eco.rng, eco.price_mod, eco.demand_mod())
 	berths.append(f)
+	_resupply_warship(f)
 	eco.freighters_changed.emit()
 	eco.post_event("%s 到港，停留 %d 秒（剩余泊位 %d）——货舰自动与市场挂单成交" % [
 		f.name, int(GameData.ECON["freighter_dwell_s"]), berths_available()],
@@ -91,8 +92,54 @@ func dock_special_freighter(f: Freighter) -> bool:
 	if berths_available() <= 0:
 		return false
 	berths.append(f)
+	_resupply_warship(f)
 	eco.freighters_changed.emit()
 	return true
+
+
+## Fuel/ammunition are consumed onboard; these purchases do not occupy transport cargo.
+## Shortages are retried while docked. Only the remaining requirement can be purchased.
+func _resupply_warship(f: Freighter) -> void:
+	var profile: Dictionary = GameData.VISITOR_SUPPLIES.get(f.hull_id, {})
+	if profile.is_empty():
+		return
+	if f.supplies_requested.is_empty():
+		f.supplies_requested = profile.duplicate()
+	var purchased := false
+	var incomplete := false
+	for gid in f.supplies_requested:
+		var need := maxi(0, int(f.supplies_requested[gid]) - int(f.supplies_received.get(gid, 0)))
+		if need <= 0:
+			continue
+		var price: float = eco.expected_freighter_price(gid, false) * eco.price_factor(gid)
+		if f.is_smuggler:
+			price *= float(GameData.FUEL["smuggler_price"])
+		price = maxf(0.01, price)
+		var quantity := mini(need, mini(eco.stock(gid), int(f.funds / price)))
+		if quantity > 0 and eco.pay({gid: quantity}):
+			var total := float(quantity) * price
+			f.funds -= total
+			f.supplies_income += total
+			f.supplies_received[gid] = int(f.supplies_received.get(gid, 0)) + quantity
+			eco.add_money(total)
+			if f.faction_id != "":
+				eco.diplomacy.record_trade(f.faction_id, total)
+			eco.market._log_trade(gid, price, quantity)
+			if GameData.is_military(gid):
+				eco.military_goods_sold.emit(gid, quantity, price)
+			purchased = true
+		incomplete = incomplete or int(f.supplies_received.get(gid, 0)) < int(f.supplies_requested[gid])
+	if purchased:
+		eco.post_event("%s 战舰补给：燃料 %d/%d · 电浆弹药 %d/%d · 累计收入 %s" % [
+			f.name, int(f.supplies_received.get("fuel", 0)), int(f.supplies_requested.get("fuel", 0)),
+			int(f.supplies_received.get("plasmaAmmo", 0)), int(f.supplies_requested.get("plasmaAmmo", 0)),
+			EconTheme.money(f.supplies_income)], "good")
+	if incomplete and not f.shortage_reported:
+		f.shortage_reported = true
+		eco.post_event("%s 补给不足：燃料、弹药或采购资金不足，将在停靠期间继续补给" % f.name, "warn")
+	if purchased:
+		eco.market_changed.emit()
+		eco.freighters_changed.emit()
 
 
 func summon_smuggler() -> String:
@@ -117,6 +164,10 @@ func tick_dwell(delta: float) -> void:
 	var dwell := dwell_total()
 	for f in berths.duplicate():
 		f.dock_age += delta
+		f.supply_retry -= delta
+		if f.supply_retry <= 0.0:
+			f.supply_retry = 1.0
+			_resupply_warship(f)
 		# dwell_override：世界系统的采购代理(is_dealer)等特殊货舰用它覆盖固定停留时长
 		var eff_dwell: float = f.dwell_override if f.dwell_override > 0.0 else dwell
 		if f.dock_age >= eff_dwell:
